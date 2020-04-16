@@ -13,7 +13,6 @@ jobs:
   forkbacon:
     runs-on: ubuntu-latest
     steps:
-    - name: forkbacon
     - uses: shitiomatic/forkbacon@master # Prefer using tagged version
       with:
         upstream_url: "https://github.com/TelegramMessenger/Telegram-iOS.git"

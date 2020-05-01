@@ -1521,7 +1521,6 @@
 
 "Channel.UpdatePhotoItem" = "Set Channel Photo";
 
-"Channel.AboutItem" = "about";
 "Channel.LinkItem" = "share link";
 "Channel.Edit.AboutItem" = "Description";
 "Channel.Edit.LinkItem" = "Link";
@@ -5474,18 +5473,9 @@ Any member of this group will be able to see messages in the channel.";
 
 "MuteFor.Forever" = "Mute Forever";
 
-"Conversation.Dice" = "Send a 🎲 emoji to any chat to get a random number from Telegram.";
-
-"Conversation.Dice.🎲" = "Send a dice emoji to any chat to roll a die.";
-"Conversation.Dice.🎯" = "Send a dart emoji to try your luck.";
+"Conversation.Dice.u1F3B2" = "Send a dice emoji to any chat to roll a die.";
+"Conversation.Dice.u1F3AF" = "Send a dart emoji to try your luck.";
 "Conversation.SendDice" = "Send";
-
-"ForwardedDices_1" = "Forwarded dice";
-"ForwardedDices_2" = "2 forwarded dices";
-"ForwardedDices_3_10" = "%@ forwarded dices";
-"ForwardedDices_any" = "%@ forwarded dices";
-"ForwardedDices_many" = "%@ forwarded dices";
-"ForwardedDices_0" = "%@ forwarded dices";
 
 "Conversation.ContextMenuDiscuss" = "Discuss";
 
@@ -5494,3 +5484,16 @@ Any member of this group will be able to see messages in the channel.";
 "CreatePoll.ExplanationInfo" = "Users will see this comment after choosing a wrong answer, good for educational purposes.";
 
 "FeaturedStickers.OtherSection" = "OTHER STICKERS";
+
+"ChatList.GenericPsaAlert" = "This provides public service announcements in your chat list.";
+"ChatList.PsaAlert.covid" = "This message provides you with a public service announcement in relation to the undergoing pandemics. Learn more about this initiative at https://telegram.org/blog/coronavirus";
+"ChatList.GenericPsaLabel" = "PSA";
+"ChatList.PsaLabel.covid" = "Covid-19";
+"Chat.GenericPsaTooltip" = "This is a public service announcement";
+"Chat.PsaTooltip.covid" = "This message provides you with a public service announcement in relation to the undergoing pandemics. Learn more about this initiative at https://telegram.org/blog/coronavirus";
+
+"Message.GenericForwardedPsa" = "Public Service Announcement\nFrom: %@";
+"Message.ForwardedPsa.covid" = "Covid-19 Notification\nFrom: %@";
+
+"Channel.AboutItem" = "about";
+"PeerInfo.GroupAboutItem" = "about";

@@ -9,9 +9,10 @@ import SyncCore
 import TelegramCore
 import TextFormat
 import Postbox
+import UrlEscaping
 
 public enum TooltipActiveTextItem {
-    case url(String)
+    case url(String, Bool)
     case mention(PeerId, String)
     case textMention(String)
     case botCommand(String)
@@ -26,6 +27,7 @@ public enum TooltipActiveTextAction {
 private final class TooltipScreenNode: ViewControllerTracingNode {
     private let icon: TooltipScreen.Icon?
     private let location: TooltipScreen.Location
+    private let displayDuration: TooltipScreen.DisplayDuration
     private let shouldDismissOnTouch: (CGPoint) -> TooltipScreen.DismissOnTouch
     private let requestDismiss: () -> Void
     
@@ -42,9 +44,10 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
     
     private var validLayout: ContainerViewLayout?
     
-    init(text: String, textEntities: [MessageTextEntity], icon: TooltipScreen.Icon?, location: TooltipScreen.Location, shouldDismissOnTouch: @escaping (CGPoint) -> TooltipScreen.DismissOnTouch, requestDismiss: @escaping () -> Void, openActiveTextItem: @escaping (TooltipActiveTextItem, TooltipActiveTextAction) -> Void) {
+    init(text: String, textEntities: [MessageTextEntity], icon: TooltipScreen.Icon?, location: TooltipScreen.Location, displayDuration: TooltipScreen.DisplayDuration, shouldDismissOnTouch: @escaping (CGPoint) -> TooltipScreen.DismissOnTouch, requestDismiss: @escaping () -> Void, openActiveTextItem: @escaping (TooltipActiveTextItem, TooltipActiveTextAction) -> Void) {
         self.icon = icon
         self.location = location
+        self.displayDuration = displayDuration
         self.shouldDismissOnTouch = shouldDismissOnTouch
         self.requestDismiss = requestDismiss
         
@@ -127,12 +130,16 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             }
             return nil
         }
-        self.textNode.tapAttributeAction = { [weak self] attributes in
-            guard let _ = self else {
+        self.textNode.tapAttributeAction = { [weak self] attributes, index in
+            guard let strongSelf = self else {
                 return
             }
             if let url = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.URL)] as? String {
-                openActiveTextItem(.url(url), .tap)
+                var concealed = true
+                if let (attributeText, fullText) = strongSelf.textNode.attributeSubstring(name: TelegramTextAttributes.URL, index: index) {
+                    concealed = !doesUrlMatchText(url: url, text: attributeText, fullText: fullText)
+                }
+                openActiveTextItem(.url(url, concealed), .tap)
             } else if let mention = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.PeerMention)] as? TelegramPeerMention {
                 openActiveTextItem(.mention(mention.peerId, mention.mention), .tap)
             } else if let mention = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.PeerTextMention)] as? String {
@@ -144,12 +151,16 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             }
         }
         
-        self.textNode.longTapAttributeAction = { [weak self] attributes in
-            guard let _ = self else {
+        self.textNode.longTapAttributeAction = { [weak self] attributes, index in
+            guard let strongSelf = self else {
                 return
             }
             if let url = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.URL)] as? String {
-                openActiveTextItem(.url(url), .longTap)
+                var concealed = true
+                if let (attributeText, fullText) = strongSelf.textNode.attributeSubstring(name: TelegramTextAttributes.URL, index: index) {
+                    concealed = !doesUrlMatchText(url: url, text: attributeText, fullText: fullText)
+                }
+                openActiveTextItem(.url(url, concealed), .longTap)
             } else if let mention = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.PeerMention)] as? TelegramPeerMention {
                 openActiveTextItem(.mention(mention.peerId, mention.mention), .longTap)
             } else if let mention = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.PeerTextMention)] as? String {
@@ -357,10 +368,16 @@ public final class TooltipScreen: ViewController {
         case top
     }
     
+    public enum DisplayDuration {
+        case `default`
+        case custom(Double)
+    }
+    
     public let text: String
     public let textEntities: [MessageTextEntity]
     private let icon: TooltipScreen.Icon?
     private let location: TooltipScreen.Location
+    private let displayDuration: DisplayDuration
     private let shouldDismissOnTouch: (CGPoint) -> TooltipScreen.DismissOnTouch
     private let openActiveTextItem: (TooltipActiveTextItem, TooltipActiveTextAction) -> Void
     
@@ -374,11 +391,14 @@ public final class TooltipScreen: ViewController {
     public var willBecomeDismissed: ((TooltipScreen) -> Void)?
     public var becameDismissed: ((TooltipScreen) -> Void)?
     
-    public init(text: String, textEntities: [MessageTextEntity] = [], icon: TooltipScreen.Icon?, location: TooltipScreen.Location, shouldDismissOnTouch: @escaping (CGPoint) -> TooltipScreen.DismissOnTouch, openActiveTextItem: @escaping (TooltipActiveTextItem, TooltipActiveTextAction) -> Void = { _, _ in }) {
+    private var dismissTimer: Foundation.Timer?
+    
+    public init(text: String, textEntities: [MessageTextEntity] = [], icon: TooltipScreen.Icon?, location: TooltipScreen.Location, displayDuration: DisplayDuration = .default, shouldDismissOnTouch: @escaping (CGPoint) -> TooltipScreen.DismissOnTouch, openActiveTextItem: @escaping (TooltipActiveTextItem, TooltipActiveTextAction) -> Void = { _, _ in }) {
         self.text = text
         self.textEntities = textEntities
         self.icon = icon
         self.location = location
+        self.displayDuration = displayDuration
         self.shouldDismissOnTouch = shouldDismissOnTouch
         self.openActiveTextItem = openActiveTextItem
         
@@ -391,18 +411,51 @@ public final class TooltipScreen: ViewController {
         fatalError("init(coder:) has not been implemented")
     }
     
+    deinit {
+        self.dismissTimer?.invalidate()
+    }
+    
     override public func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
         self.controllerNode.animateIn()
+        self.resetDismissTimeout(duration: self.displayDuration)
+    }
+    
+    public func resetDismissTimeout(duration: TooltipScreen.DisplayDuration? = nil) {
+        self.dismissTimer?.invalidate()
         
-        DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 5.0, execute: { [weak self] in
-            self?.dismiss()
-        })
+        let timeout: Double
+        switch duration ?? self.displayDuration {
+        case .default:
+            timeout = 5.0
+        case let .custom(value):
+            timeout = value
+        }
+        
+        final class TimerTarget: NSObject {
+            private let f: () -> Void
+            
+            init(_ f: @escaping () -> Void) {
+                self.f = f
+            }
+            
+            @objc func timerEvent() {
+                self.f()
+            }
+        }
+        let dismissTimer = Foundation.Timer(timeInterval: timeout, target: TimerTarget { [weak self] in
+            guard let strongSelf = self else {
+                return
+            }
+            strongSelf.dismiss()
+        }, selector: #selector(TimerTarget.timerEvent), userInfo: nil, repeats: false)
+        self.dismissTimer = dismissTimer
+        RunLoop.main.add(dismissTimer, forMode: .common)
     }
     
     override public func loadDisplayNode() {
-        self.displayNode = TooltipScreenNode(text: self.text, textEntities: self.textEntities, icon: self.icon, location: self.location, shouldDismissOnTouch: self.shouldDismissOnTouch, requestDismiss: { [weak self] in
+        self.displayNode = TooltipScreenNode(text: self.text, textEntities: self.textEntities, icon: self.icon, location: self.location, displayDuration: self.displayDuration, shouldDismissOnTouch: self.shouldDismissOnTouch, requestDismiss: { [weak self] in
             guard let strongSelf = self else {
                 return
             }

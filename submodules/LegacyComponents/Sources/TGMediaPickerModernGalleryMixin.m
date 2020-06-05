@@ -25,6 +25,7 @@
 @interface TGMediaPickerModernGalleryMixin ()
 {
     TGMediaEditingContext *_editingContext;
+    id<TGPhotoPaintStickersContext> _stickersContext;
     bool _asFile;
     
     __weak TGViewController *_parentController;
@@ -41,17 +42,17 @@
 
 @implementation TGMediaPickerModernGalleryMixin
 
-- (instancetype)initWithContext:(id<LegacyComponentsContext>)context item:(id)item fetchResult:(TGMediaAssetFetchResult *)fetchResult parentController:(TGViewController *)parentController thumbnailImage:(UIImage *)thumbnailImage selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext suggestionContext:(TGSuggestionContext *)suggestionContext hasCaptions:(bool)hasCaptions allowCaptionEntities:(bool)allowCaptionEntities hasTimer:(bool)hasTimer onlyCrop:(bool)onlyCrop inhibitDocumentCaptions:(bool)inhibitDocumentCaptions inhibitMute:(bool)inhibitMute asFile:(bool)asFile itemsLimit:(NSUInteger)itemsLimit recipientName:(NSString *)recipientName hasSilentPosting:(bool)hasSilentPosting hasSchedule:(bool)hasSchedule reminder:(bool)reminder
+- (instancetype)initWithContext:(id<LegacyComponentsContext>)context item:(id)item fetchResult:(TGMediaAssetFetchResult *)fetchResult parentController:(TGViewController *)parentController thumbnailImage:(UIImage *)thumbnailImage selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext suggestionContext:(TGSuggestionContext *)suggestionContext hasCaptions:(bool)hasCaptions allowCaptionEntities:(bool)allowCaptionEntities hasTimer:(bool)hasTimer onlyCrop:(bool)onlyCrop inhibitDocumentCaptions:(bool)inhibitDocumentCaptions inhibitMute:(bool)inhibitMute asFile:(bool)asFile itemsLimit:(NSUInteger)itemsLimit recipientName:(NSString *)recipientName hasSilentPosting:(bool)hasSilentPosting hasSchedule:(bool)hasSchedule reminder:(bool)reminder stickersContext:(id<TGPhotoPaintStickersContext>)stickersContext
 {
-    return [self initWithContext:context item:item fetchResult:fetchResult momentList:nil parentController:parentController thumbnailImage:thumbnailImage selectionContext:selectionContext editingContext:editingContext suggestionContext:suggestionContext hasCaptions:hasCaptions allowCaptionEntities:allowCaptionEntities hasTimer:hasTimer onlyCrop:onlyCrop inhibitDocumentCaptions:inhibitDocumentCaptions inhibitMute:inhibitMute asFile:asFile itemsLimit:itemsLimit recipientName:recipientName hasSilentPosting:hasSilentPosting hasSchedule:hasSchedule reminder:reminder];
+    return [self initWithContext:context item:item fetchResult:fetchResult momentList:nil parentController:parentController thumbnailImage:thumbnailImage selectionContext:selectionContext editingContext:editingContext suggestionContext:suggestionContext hasCaptions:hasCaptions allowCaptionEntities:allowCaptionEntities hasTimer:hasTimer onlyCrop:onlyCrop inhibitDocumentCaptions:inhibitDocumentCaptions inhibitMute:inhibitMute asFile:asFile itemsLimit:itemsLimit recipientName:recipientName hasSilentPosting:hasSilentPosting hasSchedule:hasSchedule reminder:reminder stickersContext:stickersContext];
 }
 
-- (instancetype)initWithContext:(id<LegacyComponentsContext>)context item:(id)item momentList:(TGMediaAssetMomentList *)momentList parentController:(TGViewController *)parentController thumbnailImage:(UIImage *)thumbnailImage selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext suggestionContext:(TGSuggestionContext *)suggestionContext hasCaptions:(bool)hasCaptions allowCaptionEntities:(bool)allowCaptionEntities hasTimer:(bool)hasTimer onlyCrop:(bool)onlyCrop inhibitDocumentCaptions:(bool)inhibitDocumentCaptions inhibitMute:(bool)inhibitMute asFile:(bool)asFile itemsLimit:(NSUInteger)itemsLimit hasSilentPosting:(bool)hasSilentPosting hasSchedule:(bool)hasSchedule reminder:(bool)reminder
+- (instancetype)initWithContext:(id<LegacyComponentsContext>)context item:(id)item momentList:(TGMediaAssetMomentList *)momentList parentController:(TGViewController *)parentController thumbnailImage:(UIImage *)thumbnailImage selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext suggestionContext:(TGSuggestionContext *)suggestionContext hasCaptions:(bool)hasCaptions allowCaptionEntities:(bool)allowCaptionEntities hasTimer:(bool)hasTimer onlyCrop:(bool)onlyCrop inhibitDocumentCaptions:(bool)inhibitDocumentCaptions inhibitMute:(bool)inhibitMute asFile:(bool)asFile itemsLimit:(NSUInteger)itemsLimit hasSilentPosting:(bool)hasSilentPosting hasSchedule:(bool)hasSchedule reminder:(bool)reminder stickersContext:(id<TGPhotoPaintStickersContext>)stickersContext
 {
-    return [self initWithContext:context item:item fetchResult:nil momentList:momentList parentController:parentController thumbnailImage:thumbnailImage selectionContext:selectionContext editingContext:editingContext suggestionContext:suggestionContext hasCaptions:hasCaptions allowCaptionEntities:allowCaptionEntities hasTimer:hasTimer onlyCrop:onlyCrop inhibitDocumentCaptions:inhibitDocumentCaptions inhibitMute:inhibitMute asFile:asFile itemsLimit:itemsLimit recipientName:nil hasSilentPosting:hasSilentPosting hasSchedule:hasSchedule reminder:reminder];
+    return [self initWithContext:context item:item fetchResult:nil momentList:momentList parentController:parentController thumbnailImage:thumbnailImage selectionContext:selectionContext editingContext:editingContext suggestionContext:suggestionContext hasCaptions:hasCaptions allowCaptionEntities:allowCaptionEntities hasTimer:hasTimer onlyCrop:onlyCrop inhibitDocumentCaptions:inhibitDocumentCaptions inhibitMute:inhibitMute asFile:asFile itemsLimit:itemsLimit recipientName:nil hasSilentPosting:hasSilentPosting hasSchedule:hasSchedule reminder:reminder stickersContext:stickersContext];
 }
 
-- (instancetype)initWithContext:(id<LegacyComponentsContext>)context item:(id)item fetchResult:(TGMediaAssetFetchResult *)fetchResult momentList:(TGMediaAssetMomentList *)momentList parentController:(TGViewController *)parentController thumbnailImage:(UIImage *)thumbnailImage selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext suggestionContext:(TGSuggestionContext *)suggestionContext hasCaptions:(bool)hasCaptions allowCaptionEntities:(bool)allowCaptionEntities hasTimer:(bool)hasTimer onlyCrop:(bool)onlyCrop inhibitDocumentCaptions:(bool)inhibitDocumentCaptions inhibitMute:(bool)inhibitMute asFile:(bool)asFile itemsLimit:(NSUInteger)itemsLimit recipientName:(NSString *)recipientName hasSilentPosting:(bool)hasSilentPosting hasSchedule:(bool)hasSchedule reminder:(bool)reminder
+- (instancetype)initWithContext:(id<LegacyComponentsContext>)context item:(id)item fetchResult:(TGMediaAssetFetchResult *)fetchResult momentList:(TGMediaAssetMomentList *)momentList parentController:(TGViewController *)parentController thumbnailImage:(UIImage *)thumbnailImage selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext suggestionContext:(TGSuggestionContext *)suggestionContext hasCaptions:(bool)hasCaptions allowCaptionEntities:(bool)allowCaptionEntities hasTimer:(bool)hasTimer onlyCrop:(bool)onlyCrop inhibitDocumentCaptions:(bool)inhibitDocumentCaptions inhibitMute:(bool)inhibitMute asFile:(bool)asFile itemsLimit:(NSUInteger)itemsLimit recipientName:(NSString *)recipientName hasSilentPosting:(bool)hasSilentPosting hasSchedule:(bool)hasSchedule reminder:(bool)reminder stickersContext:(id<TGPhotoPaintStickersContext>)stickersContext
 {
     self = [super init];
     if (self != nil)
@@ -59,6 +60,7 @@
         _context = context;
         _parentController = parentController;
         _editingContext = asFile ? nil : editingContext;
+        _stickersContext = asFile? nil : stickersContext;
         _asFile = asFile;
         _itemsLimit = itemsLimit;
         
@@ -81,10 +83,11 @@
             }
         };
         
-        NSArray *galleryItems = fetchResult != nil ? [self prepareGalleryItemsForFetchResult:fetchResult selectionContext:selectionContext editingContext:editingContext asFile:asFile enumerationBlock:enumerationBlock] : [self prepareGalleryItemsForMomentList:momentList selectionContext:selectionContext editingContext:editingContext asFile:asFile enumerationBlock:enumerationBlock];
+        NSArray *galleryItems = [self prepareGalleryItemsForFetchResult:fetchResult selectionContext:selectionContext editingContext:editingContext stickersContext:stickersContext asFile:asFile enumerationBlock:enumerationBlock];
         
         TGMediaPickerGalleryModel *model = [[TGMediaPickerGalleryModel alloc] initWithContext:[_windowManager context] items:galleryItems focusItem:focusItem selectionContext:selectionContext editingContext:editingContext hasCaptions:hasCaptions allowCaptionEntities:allowCaptionEntities hasTimer:hasTimer onlyCrop:onlyCrop inhibitDocumentCaptions:inhibitDocumentCaptions hasSelectionPanel:true hasCamera:false recipientName:recipientName];
         _galleryModel = model;
+        model.stickersContext = stickersContext;
         model.inhibitMute = inhibitMute;
         model.controller = modernGallery;
         model.suggestionContext = suggestionContext;
@@ -164,7 +167,7 @@
                 }
             }
             
-            TGMediaPickerSendActionSheetController *controller = [[TGMediaPickerSendActionSheetController alloc] initWithContext:strongSelf->_context isDark:true sendButtonFrame:strongSelf.galleryModel.interfaceView.doneButtonFrame canSendSilently:hasSilentPosting canSchedule:effectiveHasSchedule reminder:reminder];
+            TGMediaPickerSendActionSheetController *controller = [[TGMediaPickerSendActionSheetController alloc] initWithContext:strongSelf->_context isDark:true sendButtonFrame:strongSelf.galleryModel.interfaceView.doneButtonFrame canSendSilently:hasSilentPosting canSchedule:effectiveHasSchedule reminder:reminder hasTimer:hasTimer];
             controller.send = ^{
                 __strong TGMediaPickerModernGalleryMixin *strongSelf = weakSelf;
                 if (strongSelf == nil)
@@ -199,6 +202,30 @@
                     
                     if (strongSelf.completeWithItem != nil)
                         strongSelf.completeWithItem(item, false, time);
+                });
+            };
+            controller.sendWithTimer = ^{
+                __strong TGMediaPickerModernGalleryMixin *strongSelf = weakSelf;
+                if (strongSelf == nil)
+                    return;
+                
+                strongSelf.presentTimerController(^(int32_t time) {
+                    __strong TGMediaPickerModernGalleryMixin *strongSelf = weakSelf;
+                    if (strongSelf == nil)
+                        return;
+                    
+                    strongSelf->_galleryModel.dismiss(true, false);
+                    
+                    TGMediaEditingContext *editingContext = strongSelf->_editingContext;
+                    NSMutableArray *items = [strongSelf->_galleryModel.selectionContext.selectedItems mutableCopy];
+                    [items addObject:item.asset];
+                    
+                    for (id<TGMediaEditableItem> editableItem in items) {
+                        [editingContext setTimer:@(time) forItem:editableItem];
+                    }
+                    
+                    if (strongSelf.completeWithItem != nil)
+                        strongSelf.completeWithItem(item, false, 0);
                 });
             };
             
@@ -311,7 +338,7 @@
     }
     
     __block id<TGModernGalleryItem> focusItem = nil;
-    NSArray *galleryItems = [self prepareGalleryItemsForFetchResult:fetchResult selectionContext:_galleryModel.selectionContext editingContext:_editingContext asFile:_asFile enumerationBlock:^(TGMediaPickerGalleryItem *item)
+    NSArray *galleryItems = [self prepareGalleryItemsForFetchResult:fetchResult selectionContext:_galleryModel.selectionContext editingContext:_editingContext stickersContext:_stickersContext asFile:_asFile enumerationBlock:^(TGMediaPickerGalleryItem *item)
     {
         if (focusItem == nil && [item isEqual:_galleryController.currentItem])
             focusItem = item;
@@ -320,7 +347,7 @@
     [_galleryModel _replaceItems:galleryItems focusingOnItem:focusItem];
 }
 
-- (NSArray *)prepareGalleryItemsForFetchResult:(TGMediaAssetFetchResult *)fetchResult selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext asFile:(bool)asFile enumerationBlock:(void (^)(TGMediaPickerGalleryItem *))enumerationBlock
+- (NSArray *)prepareGalleryItemsForFetchResult:(TGMediaAssetFetchResult *)fetchResult selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext stickersContext:(id<TGPhotoPaintStickersContext>)stickersContext asFile:(bool)asFile enumerationBlock:(void (^)(TGMediaPickerGalleryItem *))enumerationBlock
 {
     NSMutableArray *galleryItems = [[NSMutableArray alloc] init];
     
@@ -349,16 +376,14 @@
                 
             default:
             {
-                if (false && asset.subtypes & TGMediaAssetSubtypePhotoLive)
-                    galleryItem = [[TGMediaPickerGalleryVideoItem alloc] initWithAsset:asset];
-                else
-                    galleryItem = [[TGMediaPickerGalleryPhotoItem alloc] initWithAsset:asset];
+                galleryItem = [[TGMediaPickerGalleryPhotoItem alloc] initWithAsset:asset];
             }
                 break;
         }
         
         galleryItem.selectionContext = selectionContext;
         galleryItem.editingContext = editingContext;
+        galleryItem.stickersContext = stickersContext;
         
         if (enumerationBlock != nil)
             enumerationBlock(galleryItem);
@@ -367,65 +392,6 @@
         
         if (galleryItem != nil)
             [galleryItems addObject:galleryItem];
-    }
-    
-    return galleryItems;
-}
-
-- (NSArray *)prepareGalleryItemsForMomentList:(TGMediaAssetMomentList *)momentList selectionContext:(TGMediaSelectionContext *)selectionContext editingContext:(TGMediaEditingContext *)editingContext asFile:(bool)asFile enumerationBlock:(void (^)(TGMediaPickerGalleryItem *))enumerationBlock
-{
-    NSMutableArray *galleryItems = [[NSMutableArray alloc] init];
-    
-    for (NSUInteger i = 0; i < momentList.count; i++)
-    {
-        TGMediaAssetMoment *moment = momentList[i];
-        
-        for (NSUInteger k = 0; k < moment.assetCount; k++)
-        {
-            TGMediaAsset *asset = [moment.fetchResult assetAtIndex:k];
-            
-            TGMediaPickerGalleryItem *galleryItem = nil;
-            switch (asset.type)
-            {
-                case TGMediaAssetVideoType:
-                {
-                    TGMediaPickerGalleryVideoItem *videoItem = [[TGMediaPickerGalleryVideoItem alloc] initWithAsset:asset];
-                    videoItem.selectionContext = selectionContext;
-                    videoItem.editingContext = editingContext;
-                    
-                    galleryItem = videoItem;
-                }
-                    break;
-                    
-                case TGMediaAssetGifType:
-                {
-                    TGMediaPickerGalleryGifItem *gifItem = [[TGMediaPickerGalleryGifItem alloc] initWithAsset:asset];
-                    gifItem.selectionContext = selectionContext;
-                    gifItem.editingContext = editingContext;
-                    
-                    galleryItem = gifItem;
-                }
-                    break;
-                    
-                default:
-                {
-                    TGMediaPickerGalleryPhotoItem *photoItem = [[TGMediaPickerGalleryPhotoItem alloc] initWithAsset:asset];
-                    photoItem.selectionContext = selectionContext;
-                    photoItem.editingContext = editingContext;
-                    
-                    galleryItem = photoItem;
-                }
-                    break;
-            }
-            
-            if (enumerationBlock != nil)
-                enumerationBlock(galleryItem);
-            
-            galleryItem.asFile = asFile;
-            
-            if (galleryItem != nil)
-                [galleryItems addObject:galleryItem];
-        }
     }
     
     return galleryItems;

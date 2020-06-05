@@ -325,6 +325,8 @@ public class PeerMediaCollectionController: TelegramBaseController {
                 return false
             }, sendGif: { _, _, _ in
                 return false
+            }, sendBotContextResultAsGif: { _, _, _, _ in
+                return false
             }, requestMessageActionCallback: { _, _, _ in
             }, requestMessageActionUrlAuth: { _, _, _ in
             }, activateSwitchInline: { _, _ in
@@ -407,7 +409,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
                 self?.activateSearch()
             }, setupReply: { _ in
             }, canSetupReply: { _ in
-                return false
+                return .none
         }, navigateToFirstDateMessage: { _ in
         }, requestRedeliveryOfFailedMessages: { _ in
         }, addContact: { _ in
@@ -421,7 +423,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
         }, sendScheduledMessagesNow: { _ in
         }, editScheduledMessagesTime: { _ in
         }, performTextSelectionAction: { _, _, _ in
-        }, updateMessageReaction: { _, _ in
+        }, updateMessageLike: { _, _ in
         }, openMessageReactions: { _ in
         }, displaySwipeToReplyHint: {
         }, dismissReplyMarkupMessage: { _ in
@@ -857,8 +859,8 @@ public class PeerMediaCollectionController: TelegramBaseController {
                             if let strongSelf = self {
                                 strongSelf.updateInterfaceState(animated: false, { $0.withoutSelectionState() })
                                 
-                                let ready = ValuePromise<Bool>()
-                                strongSelf.messageContextDisposable.set((ready.get() |> take(1) |> deliverOnMainQueue).start(next: { _ in
+                                let ready = Promise<Bool>()
+                                strongSelf.messageContextDisposable.set((ready.get() |> filter { $0 } |> take(1) |> deliverOnMainQueue).start(next: { _ in
                                     if let strongController = controller {
                                         strongController.dismiss()
                                     }

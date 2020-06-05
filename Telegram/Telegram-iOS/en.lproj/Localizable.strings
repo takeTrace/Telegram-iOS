@@ -5338,10 +5338,11 @@ Any member of this group will be able to see messages in the channel.";
 "PeerInfo.PaneMedia" = "Media";
 "PeerInfo.PaneFiles" = "Files";
 "PeerInfo.PaneLinks" = "Links";
-"PeerInfo.PaneVoice" = "Voice Messages";
+"PeerInfo.PaneVoiceAndVideo" = "Voice";
 "PeerInfo.PaneAudio" = "Audio";
 "PeerInfo.PaneGroups" = "Groups";
 "PeerInfo.PaneMembers" = "Members";
+"PeerInfo.PaneGifs" = "GIFs";
 
 "PeerInfo.AddToContacts" = "Add to Contacts";
 
@@ -5497,3 +5498,26 @@ Any member of this group will be able to see messages in the channel.";
 
 "Channel.AboutItem" = "about";
 "PeerInfo.GroupAboutItem" = "about";
+
+"Widget.ApplicationStartRequired" = "Open the app to use the widget";
+
+"ChatList.Context.AddToFolder" = "Add to Folder";
+"ChatList.Context.RemoveFromFolder" = "Remove from Folder";
+"ChatList.Context.Back" = "Back";
+"ChatList.AddedToFolderTooltip" = "%1$@ has been added to folder %2$@";
+"ChatList.RemovedFromFolderTooltip" = "%1$@ has been removed from folder %2$@";
+
+"OwnershipTransfer.Transfer" = "Transfer";
+
+"TwoStepAuth.Disable" = "Disable";
+
+"Chat.Gifs.TrendingSectionHeader" = "TRENDING GIFS";
+"Chat.Gifs.SavedSectionHeader" = "MY GIFS";
+
+"Paint.Framed" = "Framed";
+
+"Media.SendingOptionsTooltip" = "Hold this button to send your message with a self-destruct timer.";
+"Media.SendWithTimer" = "Send With Timer";
+
+"Conversation.Timer.Title" = "Send With Timer";
+"Conversation.Timer.Send" = "Send With Timer";

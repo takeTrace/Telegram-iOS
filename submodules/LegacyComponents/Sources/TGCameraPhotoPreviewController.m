@@ -135,7 +135,7 @@
     CGRect containerFrame = self.view.bounds;
     CGSize fittedSize = TGScaleToSize(_image.size, containerFrame.size);
 
-    _scrollView = [[TGModernGalleryZoomableScrollView alloc] initWithFrame:self.view.bounds];
+    _scrollView = [[TGModernGalleryZoomableScrollView alloc] initWithFrame:self.view.bounds hasDoubleTap:true];
     _scrollView.clipsToBounds = false;
     _scrollView.delegate = self;
     _scrollView.showsHorizontalScrollIndicator = false;
@@ -1022,7 +1022,17 @@
     
     controller.requestOriginalFullSizeImage = ^(id<TGMediaEditableItem> editableItem, NSTimeInterval position)
     {
-        return [editableItem originalImageSignal:position];
+        if (editableItem.isVideo) {
+            if ([editableItem isKindOfClass:[TGMediaAsset class]]) {
+                return [TGMediaAssetImageSignals avAssetForVideoAsset:(TGMediaAsset *)editableItem];
+            } else if ([editableItem isKindOfClass:[TGCameraCapturedVideo class]]) {
+                return [SSignal single:((TGCameraCapturedVideo *)editableItem).avAsset];
+            } else {
+                return [editableItem originalImageSignal:position];
+            }
+        } else {
+            return [editableItem originalImageSignal:position];
+        }
     };
     
     [self addChildViewController:controller];

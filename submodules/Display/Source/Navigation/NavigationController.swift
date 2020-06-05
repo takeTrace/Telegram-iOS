@@ -1057,8 +1057,8 @@ open class NavigationController: UINavigationController, ContainableController, 
         self.setViewControllers(controllers, animated: animated)
     }
     
-    public func replaceTopController(_ controller: ViewController, animated: Bool, ready: ValuePromise<Bool>? = nil) {
-        ready?.set(true)
+    public func replaceTopController(_ controller: ViewController, animated: Bool, ready: Promise<Bool>? = nil) {
+        ready?.set(.single(true))
         var controllers = self.viewControllers
         controllers.removeLast()
         controllers.append(controller)

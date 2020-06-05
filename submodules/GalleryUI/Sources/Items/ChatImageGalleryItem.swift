@@ -89,18 +89,20 @@ class ChatImageGalleryItem: GalleryItem {
     let location: MessageHistoryEntryLocation?
     let performAction: (GalleryControllerInteractionTapAction) -> Void
     let openActionOptions: (GalleryControllerInteractionTapAction) -> Void
+    let present: (ViewController, Any?) -> Void
     
-    init(context: AccountContext, presentationData: PresentationData, message: Message, location: MessageHistoryEntryLocation?, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, message: Message, location: MessageHistoryEntryLocation?, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         self.presentationData = presentationData
         self.message = message
         self.location = location
         self.performAction = performAction
         self.openActionOptions = openActionOptions
+        self.present = present
     }
     
     func node() -> GalleryItemNode {
-        let node = ChatImageGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions)
+        let node = ChatImageGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions, present: self.present)
         
         for media in self.message.media {
             if let image = media as? TelegramMediaImage {
@@ -165,7 +167,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private var tilingNode: TilingNode?
     fileprivate let _ready = Promise<Void>()
     fileprivate let _title = Promise<String>()
-    fileprivate let _rightBarButtonItem = Promise<UIBarButtonItem?>(nil)
+    fileprivate let _rightBarButtonItems = Promise<[UIBarButtonItem]?>(nil)
     private let statusNodeContainer: HighlightableButtonNode
     private let statusNode: RadialStatusNode
     private let footerContentNode: ChatItemGalleryFooterContentNode
@@ -177,11 +179,11 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private let dataDisposable = MetaDisposable()
     private var status: MediaResourceStatus?
     
-    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         
         self.imageNode = TransformImageNode()
-        self.footerContentNode = ChatItemGalleryFooterContentNode(context: context, presentationData: presentationData)
+        self.footerContentNode = ChatItemGalleryFooterContentNode(context: context, presentationData: presentationData, present: present)
         self.footerContentNode.performAction = performAction
         self.footerContentNode.openActionOptions = openActionOptions
         
@@ -259,8 +261,10 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 self._ready.set(.single(Void()))
             }
             if imageReference.media.flags.contains(.hasStickers) {
-                let rightBarButtonItem = UIBarButtonItem(image: UIImage(bundleImageName: "Media Gallery/Stickers"), style: .plain, target: self, action: #selector(self.openStickersButtonPressed))
-                self._rightBarButtonItem.set(.single(rightBarButtonItem))
+                let rightBarButtonItem = UIBarButtonItem(image: generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/Stickers"), color: .white), style: .plain, target: self, action: #selector(self.openStickersButtonPressed))
+                self._rightBarButtonItems.set(.single([rightBarButtonItem]))
+            } else {
+                self._rightBarButtonItems.set(.single([]))
             }
         }
         self.contextAndMedia = (self.context, imageReference.abstract)
@@ -575,8 +579,8 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         return self._title.get()
     }
     
-    override func rightBarButtonItem() -> Signal<UIBarButtonItem?, NoError> {
-        return self._rightBarButtonItem.get()
+    override func rightBarButtonItems() -> Signal<[UIBarButtonItem]?, NoError> {
+        return self._rightBarButtonItems.get()
     }
     
     override func footerContent() -> Signal<(GalleryFooterContentNode?, GalleryOverlayContentNode?), NoError> {

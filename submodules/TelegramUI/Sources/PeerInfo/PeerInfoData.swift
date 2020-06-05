@@ -113,8 +113,9 @@ private func peerInfoAvailableMediaPanes(context: AccountContext, peerId: PeerId
         (.photoOrVideo, .media),
         (.file, .files),
         (.music, .music),
-        //(.voiceOrInstantVideo, .voice),
-        (.webPage, .links)
+        (.voiceOrInstantVideo, .voice),
+        (.webPage, .links),
+        (.gif, .gifs)
     ]
     enum PaneState {
         case loading
@@ -174,8 +175,8 @@ enum PeerInfoMembersData: Equatable {
     
     var membersContext: PeerInfoMembersContext {
         switch self {
-        case let .shortList(shortList):
-            return shortList.membersContext
+        case let .shortList(membersContext, _):
+            return membersContext
         case let .longList(membersContext):
             return membersContext
         }

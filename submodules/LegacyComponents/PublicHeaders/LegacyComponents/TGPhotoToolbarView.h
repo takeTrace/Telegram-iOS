@@ -3,9 +3,9 @@
 typedef NS_OPTIONS(NSUInteger, TGPhotoEditorTab) {
     TGPhotoEditorNoneTab        = 0,
     TGPhotoEditorCropTab        = 1 << 0,
-    TGPhotoEditorStickerTab     = 1 << 1,
-    TGPhotoEditorPaintTab       = 1 << 2,
-    TGPhotoEditorEraserTab      = 1 << 3,
+    TGPhotoEditorPaintTab       = 1 << 1,
+    TGPhotoEditorEraserTab      = 1 << 2,
+    TGPhotoEditorStickerTab     = 1 << 3,
     TGPhotoEditorTextTab        = 1 << 4,
     TGPhotoEditorToolsTab       = 1 << 5,
     TGPhotoEditorRotateTab      = 1 << 6,
@@ -44,6 +44,7 @@ typedef enum
 @property (nonatomic, copy) void(^tabPressed)(TGPhotoEditorTab tab);
 
 @property (nonatomic, readonly) CGRect cancelButtonFrame;
+@property (nonatomic, readonly) CGRect doneButtonFrame;
 
 - (instancetype)initWithBackButton:(TGPhotoEditorBackButton)backButton doneButton:(TGPhotoEditorDoneButton)doneButton solidBackground:(bool)solidBackground;
 

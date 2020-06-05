@@ -38,6 +38,11 @@
     return true;
 }
 
+- (bool)isAvialableForVideo
+{
+    return true;
+}
+
 - (NSInteger)order
 {
     return _order;
@@ -76,6 +81,9 @@
 
 - (id)displayValue
 {
+    if (self.disabled)
+        return @(self.defaultValue);
+    
     if (self.beingEdited)
         return self.tempValue;
 
@@ -86,8 +94,14 @@
 {
     _disabled = disabled;
     
-    if (self.beingEdited)
+    if (!self.beingEdited) {
         [self updateParameters];
+        [self updatePassParameters];
+    }
+}
+
+- (void)updatePassParameters {
+    
 }
 
 - (void)setBeingEdited:(bool)beingEdited

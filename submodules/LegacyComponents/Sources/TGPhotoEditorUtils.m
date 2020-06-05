@@ -217,18 +217,28 @@ UIImage *TGPhotoEditorCrop(UIImage *inputImage, UIImage *paintingImage, UIImageO
     return TGPhotoEditorVideoCrop(inputImage, paintingImage, orientation, rotation, rect, mirrored, maxSize, originalSize, shouldResize, false);
 }
 
-UIImage *TGPhotoEditorVideoCrop(UIImage *inputImage, UIImage *paintingImage, UIImageOrientation orientation, CGFloat rotation, CGRect rect, bool mirrored, CGSize maxSize, CGSize originalSize, bool shouldResize, bool useImageSize)
+UIImage *TGPhotoEditorVideoCrop(UIImage *inputImage, UIImage *paintingImage, UIImageOrientation orientation, CGFloat rotation, CGRect rect, bool mirrored, CGSize maxSize, CGSize originalSize, bool shouldResize, bool useImageSize) {
+    return TGPhotoEditorVideoExtCrop(inputImage, paintingImage, orientation, rotation, rect, mirrored, maxSize, originalSize, shouldResize, useImageSize, false);
+}
+
+UIImage *TGPhotoEditorVideoExtCrop(UIImage *inputImage, UIImage *paintingImage, UIImageOrientation orientation, CGFloat rotation, CGRect rect, bool mirrored, CGSize maxSize, CGSize originalSize, bool shouldResize, bool useImageSize, bool skipImageTransform)
 {
     if (iosMajorVersion() < 7)
         return TGPhotoEditorLegacyCrop(inputImage, paintingImage, orientation, rotation, rect, mirrored, maxSize, shouldResize);
     
+    CGSize fittedOriginalSize = originalSize;
     if (useImageSize)
     {
         CGFloat ratio = inputImage.size.width / originalSize.width;
+        if (skipImageTransform) {
+            
+        }
         rect.origin.x = rect.origin.x * ratio;
         rect.origin.y = rect.origin.y * ratio;
         rect.size.width = rect.size.width * ratio;
         rect.size.height = rect.size.height * ratio;
+        
+        fittedOriginalSize = CGSizeMake(originalSize.width * ratio, originalSize.height * ratio);
     }
     
     CGSize fittedImageSize = shouldResize ? TGFitSize(rect.size, maxSize) : rect.size;
@@ -244,6 +254,32 @@ UIImage *TGPhotoEditorVideoCrop(UIImage *inputImage, UIImage *paintingImage, UII
     CGContextSetFillColorWithColor(context, [UIColor blackColor].CGColor);
     CGContextFillRect(context, CGRectMake(0, 0, outputImageSize.width, outputImageSize.height));
     CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+        
+    UIImage *image = nil;
+    CGSize imageSize = inputImage.size;
+    if (shouldResize)
+    {
+        CGSize referenceSize = useImageSize ? inputImage.size : originalSize;
+        CGSize resizedSize = CGSizeMake(referenceSize.width * fittedImageSize.width / rect.size.width, referenceSize.height * fittedImageSize.height / rect.size.height);
+        CGImageRef resizedImage = TGPhotoLanczosResize(inputImage, resizedSize);
+        image = [UIImage imageWithCGImage:resizedImage scale:0.0f orientation:inputImage.imageOrientation];
+        CGImageRelease(resizedImage);
+        
+        if (skipImageTransform) {
+            imageSize = CGSizeMake(image.size.width * fittedOriginalSize.width / rect.size.width, image.size.height * fittedOriginalSize.height / rect.size.height);
+        } else {
+            imageSize = image.size;
+        }
+    }
+    else
+    {
+        image = inputImage;
+        imageSize = image.size;
+    }
+    
+    if (skipImageTransform) {
+        [image drawInRect:CGRectMake(0.0, 0.0, outputImageSize.width, outputImageSize.height)];
+    }
     
     CGSize scales = CGSizeMake(fittedImageSize.width / rect.size.width, fittedImageSize.height / rect.size.height);
     CGSize rotatedContentSize = TGRotatedContentSize(inputImage.size, rotation);
@@ -254,31 +290,19 @@ UIImage *TGPhotoEditorVideoCrop(UIImage *inputImage, UIImage *paintingImage, UII
     transform = CGAffineTransformRotate(transform, rotation);
     CGContextConcatCTM(context, transform);
     
-    UIImage *image = nil;
-    if (shouldResize)
-    {
-        CGSize referenceSize = useImageSize ? inputImage.size : originalSize;
-        CGSize resizedSize = CGSizeMake(referenceSize.width * fittedImageSize.width / rect.size.width, referenceSize.height * fittedImageSize.height / rect.size.height);
-        CGImageRef resizedImage = TGPhotoLanczosResize(inputImage, resizedSize);
-        image = [UIImage imageWithCGImage:resizedImage scale:0.0f orientation:inputImage.imageOrientation];
-        CGImageRelease(resizedImage);
-    }
-    else
-    {
-        image = inputImage;
-    }
-    
     if (mirrored)
         CGContextScaleCTM(context, -1.0f, 1.0f);
     
-    [image drawAtPoint:CGPointMake(-image.size.width / 2, -image.size.height / 2)];
+    if (!skipImageTransform) {
+        [image drawAtPoint:CGPointMake(-image.size.width / 2, -image.size.height / 2)];
+    }
     
     if (paintingImage != nil)
     {
         if (mirrored)
             CGContextScaleCTM(context, -1.0f, 1.0f);
-        
-        [paintingImage drawInRect:CGRectMake(-image.size.width / 2, -image.size.height / 2, image.size.width, image.size.height)];
+                
+        [paintingImage drawInRect:CGRectMake(-imageSize.width / 2, -imageSize.height / 2, imageSize.width, imageSize.height)];
     }
     
     UIImage *croppedImage = UIGraphicsGetImageFromCurrentImageContext();

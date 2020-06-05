@@ -1400,6 +1400,7 @@ private func sendMessage(auxiliaryMethods: AccountAuxiliaryMethods, postbox: Pos
                                 if case .message = result {
                                     flags.remove(.Unsent)
                                     flags.remove(.Sending)
+                                    flags.remove(.Failed)
                                 } else {
                                     flags = [.Failed]
                                 }
@@ -1413,7 +1414,7 @@ private func sendMessage(auxiliaryMethods: AccountAuxiliaryMethods, postbox: Pos
                                 if let fromMedia = currentMessage.media.first, let encryptedFile = encryptedFile, let file = file {
                                     var toMedia: Media?
                                     if let fromMedia = fromMedia as? TelegramMediaFile {
-                                        let updatedFile = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.CloudSecretFile, id: encryptedFile.id), partialReference: nil, resource: SecretFileMediaResource(fileId: encryptedFile.id, accessHash: encryptedFile.accessHash, containerSize: encryptedFile.size, decryptedSize: file.size, datacenterId: Int(encryptedFile.datacenterId), key: file.key), previewRepresentations: fromMedia.previewRepresentations, immediateThumbnailData: fromMedia.immediateThumbnailData, mimeType: fromMedia.mimeType, size: fromMedia.size, attributes: fromMedia.attributes)
+                                        let updatedFile = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.CloudSecretFile, id: encryptedFile.id), partialReference: nil, resource: SecretFileMediaResource(fileId: encryptedFile.id, accessHash: encryptedFile.accessHash, containerSize: encryptedFile.size, decryptedSize: file.size, datacenterId: Int(encryptedFile.datacenterId), key: file.key), previewRepresentations: fromMedia.previewRepresentations, videoThumbnails: fromMedia.videoThumbnails, immediateThumbnailData: fromMedia.immediateThumbnailData, mimeType: fromMedia.mimeType, size: fromMedia.size, attributes: fromMedia.attributes)
                                         toMedia = updatedFile
                                         updatedMedia = [updatedFile]
                                     }

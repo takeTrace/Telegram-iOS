@@ -11,6 +11,9 @@ import UniversalMediaPlayer
 import AccountContext
 import RadialStatusNode
 import TelegramUniversalVideoContent
+import PresentationDataUtils
+import OverlayStatusController
+import StickerPackPreviewUI
 import AppBundle
 
 public enum UniversalVideoGalleryItemContentInfo {
@@ -40,8 +43,9 @@ public class UniversalVideoGalleryItem: GalleryItem {
     let performAction: (GalleryControllerInteractionTapAction) -> Void
     let openActionOptions: (GalleryControllerInteractionTapAction) -> Void
     let storeMediaPlaybackState: (MessageId, Double?) -> Void
+    let present: (ViewController, Any?) -> Void
 
-    public init(context: AccountContext, presentationData: PresentationData, content: UniversalVideoContent, originData: GalleryItemOriginData?, indexData: GalleryItemIndexData?, contentInfo: UniversalVideoGalleryItemContentInfo?, caption: NSAttributedString, credit: NSAttributedString? = nil, hideControls: Bool = false, fromPlayingVideo: Bool = false, landscape: Bool = false, timecode: Double? = nil, configuration: GalleryConfiguration? = nil, playbackCompleted: @escaping () -> Void = {}, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void, storeMediaPlaybackState: @escaping (MessageId, Double?) -> Void) {
+    public init(context: AccountContext, presentationData: PresentationData, content: UniversalVideoContent, originData: GalleryItemOriginData?, indexData: GalleryItemIndexData?, contentInfo: UniversalVideoGalleryItemContentInfo?, caption: NSAttributedString, credit: NSAttributedString? = nil, hideControls: Bool = false, fromPlayingVideo: Bool = false, landscape: Bool = false, timecode: Double? = nil, configuration: GalleryConfiguration? = nil, playbackCompleted: @escaping () -> Void = {}, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void, storeMediaPlaybackState: @escaping (MessageId, Double?) -> Void, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         self.presentationData = presentationData
         self.content = content
@@ -59,10 +63,11 @@ public class UniversalVideoGalleryItem: GalleryItem {
         self.performAction = performAction
         self.openActionOptions = openActionOptions
         self.storeMediaPlaybackState = storeMediaPlaybackState
+        self.present = present
     }
     
     public func node() -> GalleryItemNode {
-        let node = UniversalVideoGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions)
+        let node = UniversalVideoGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions, present: self.present)
         
         if let indexData = self.indexData {
             node._title.set(.single(self.presentationData.strings.Items_NOfM("\(indexData.position + 1)", "\(indexData.totalCount)").0))
@@ -242,14 +247,14 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
     fileprivate let _ready = Promise<Void>()
     fileprivate let _title = Promise<String>()
     fileprivate let _titleView = Promise<UIView?>()
-    fileprivate let _rightBarButtonItem = Promise<UIBarButtonItem?>()
+    fileprivate let _rightBarButtonItems = Promise<[UIBarButtonItem]?>()
     
     private let scrubberView: ChatVideoGalleryItemScrubberView
     private let footerContentNode: ChatItemGalleryFooterContentNode
     private let overlayContentNode: UniversalVideoGalleryItemOverlayNode
     
     private var videoNode: UniversalVideoNode?
-    private var videoFramePreview: MediaPlayerFramePreview?
+    private var videoFramePreview: FramePreview?
     private var pictureInPictureNode: UniversalVideoGalleryItemPictureInPictureNode?
     private let statusButtonNode: HighlightableButtonNode
     private let statusNode: RadialStatusNode
@@ -278,18 +283,18 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
     private var fetchStatus: MediaResourceStatus?
     private var fetchControls: FetchControls?
     
-    private var scrubbingFrame = Promise<MediaPlayerFramePreviewResult?>(nil)
+    private var scrubbingFrame = Promise<FramePreviewResult?>(nil)
     private var scrubbingFrames = false
     private var scrubbingFrameDisposable: Disposable?
     
     var playbackCompleted: (() -> Void)?
     
-    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         self.presentationData = presentationData
         self.scrubberView = ChatVideoGalleryItemScrubberView()
         
-        self.footerContentNode = ChatItemGalleryFooterContentNode(context: context, presentationData: presentationData)
+        self.footerContentNode = ChatItemGalleryFooterContentNode(context: context, presentationData: presentationData, present: present)
         self.footerContentNode.scrubberView = self.scrubberView
         self.footerContentNode.performAction = performAction
         self.footerContentNode.openActionOptions = openActionOptions
@@ -443,8 +448,12 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             
             self.dismissOnOrientationChange = item.landscape
             
+            var hasLinkedStickers = false
+            if let content = item.content as? NativeVideoContent {
+                hasLinkedStickers = content.fileReference.media.hasLinkedStickers
+            }
+            
             var disablePictureInPicture = false
-    
             var disablePlayerControls = false
             var isAnimated = false
             if let content = item.content as? NativeVideoContent {
@@ -457,6 +466,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 switch type {
                     case .youtube:
                         disablePictureInPicture = !(item.configuration?.youtubePictureInPictureEnabled ?? false)
+                        self.videoFramePreview = YoutubeEmbedFramePreview(context: item.context, content: content)
                     case .iframe:
                         disablePlayerControls = true
                     default:
@@ -486,7 +496,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                         strongSelf.playOnContentOwnership = false
                         strongSelf.initiallyActivated = true
                         strongSelf.skipInitialPause = true
-                        strongSelf.videoNode?.playOnceWithSound(playAndRecord: false, actionAtEnd: .stop)
+                        strongSelf.videoNode?.playOnceWithSound(playAndRecord: false, actionAtEnd: isAnimated ? .loop : .stop)
                     }
                 }
             }
@@ -667,12 +677,18 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             }))
             
             self.zoomableContent = (videoSize, videoNode)
-            
+                        
+            var barButtonItems: [UIBarButtonItem] = []
+            if hasLinkedStickers {
+                let rightBarButtonItem = UIBarButtonItem(image: generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/Stickers"), color: .white), style: .plain, target: self, action: #selector(self.openStickersButtonPressed))
+                barButtonItems.append(rightBarButtonItem)
+            }
             if !isAnimated && !disablePlayerControls && !disablePictureInPicture {
                 let rightBarButtonItem = UIBarButtonItem(image: pictureInPictureButtonImage, style: .plain, target: self, action: #selector(self.pictureInPictureButtonPressed))
-                self._rightBarButtonItem.set(.single(rightBarButtonItem))
+                barButtonItems.append(rightBarButtonItem)
             }
-            
+            self._rightBarButtonItems.set(.single(barButtonItems))
+        
             videoNode.playbackCompleted = { [weak videoNode] in
                 Queue.mainQueue().async {
                     item.playbackCompleted()
@@ -1215,8 +1231,8 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
         return self._titleView.get()
     }
     
-    override func rightBarButtonItem() -> Signal<UIBarButtonItem?, NoError> {
-        return self._rightBarButtonItem.get()
+    override func rightBarButtonItems() -> Signal<[UIBarButtonItem]?, NoError> {
+        return self._rightBarButtonItems.get()
     }
     
     @objc func statusButtonPressed() {
@@ -1301,6 +1317,46 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     self?.completeCustomDismiss()
                 })
             }
+        }
+    }
+    
+    @objc func openStickersButtonPressed() {
+        if let content = self.item?.content as? NativeVideoContent {
+            let media = content.fileReference.abstract
+
+            let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+            let progressSignal = Signal<Never, NoError> { [weak self] subscriber in
+                guard let strongSelf = self else {
+                    return EmptyDisposable
+                }
+                let controller = OverlayStatusController(theme: presentationData.theme, type: .loading(cancelled: nil))
+                (strongSelf.baseNavigationController()?.topViewController as? ViewController)?.present(controller, in: .window(.root), with: nil)
+                return ActionDisposable { [weak controller] in
+                    Queue.mainQueue().async() {
+                        controller?.dismiss()
+                    }
+                }
+            }
+            |> runOn(Queue.mainQueue())
+            |> delay(0.15, queue: Queue.mainQueue())
+            let progressDisposable = progressSignal.start()
+            
+            let signal = stickerPacksAttachedToMedia(account: self.context.account, media: media)
+            |> afterDisposed {
+                Queue.mainQueue().async {
+                    progressDisposable.dispose()
+                }
+            }
+            let _ = (signal
+            |> deliverOnMainQueue).start(next: { [weak self] packs in
+                guard let strongSelf = self, !packs.isEmpty else {
+                    return
+                }
+                let baseNavigationController = strongSelf.baseNavigationController()
+                baseNavigationController?.view.endEditing(true)
+                let controller = StickerPackScreen(context: strongSelf.context, mainStickerPack: packs[0], stickerPacks: packs, sendSticker: nil)
+                (baseNavigationController?.topViewController as? ViewController)?.present(controller, in: .window(.root), with: nil)
+            })
         }
     }
     

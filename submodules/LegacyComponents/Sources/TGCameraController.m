@@ -51,6 +51,8 @@
 #import "TGCameraCapturedPhoto.h"
 #import "TGCameraCapturedVideo.h"
 
+#import "PGPhotoEditor.h"
+
 #import "TGAnimationUtils.h"
 
 const CGFloat TGCameraSwipeMinimumVelocity = 600.0f;
@@ -1147,6 +1149,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
 
         galleryItem.selectionContext = _selectionContext;
         galleryItem.editingContext = _editingContext;
+        galleryItem.stickersContext = _stickersContext;
         
         if (enumerationBlock != nil)
             enumerationBlock(galleryItem);
@@ -1251,6 +1254,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
         model.inhibitMute = self.inhibitMute;
         model.controller = galleryController;
         model.suggestionContext = self.suggestionContext;
+        model.stickersContext = self.stickersContext;
         
         __weak TGModernGalleryController *weakGalleryController = galleryController;
         __weak TGMediaPickerGalleryModel *weakModel = model;
@@ -1279,7 +1283,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                 }
             }
             
-            TGMediaPickerSendActionSheetController *controller = [[TGMediaPickerSendActionSheetController alloc] initWithContext:strongSelf->_context isDark:true sendButtonFrame:strongModel.interfaceView.doneButtonFrame canSendSilently:strongSelf->_hasSilentPosting canSchedule:effectiveHasSchedule reminder:strongSelf->_reminder];
+            TGMediaPickerSendActionSheetController *controller = [[TGMediaPickerSendActionSheetController alloc] initWithContext:strongSelf->_context isDark:true sendButtonFrame:strongModel.interfaceView.doneButtonFrame canSendSilently:strongSelf->_hasSilentPosting canSchedule:effectiveHasSchedule reminder:strongSelf->_reminder hasTimer:strongSelf->_hasTimer];
             controller.send = ^{
                 __strong TGCameraController *strongSelf = weakSelf;
                 __strong TGMediaPickerGalleryModel *strongModel = weakModel;
@@ -1360,6 +1364,43 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                     
                     if (strongSelf.finishedWithResults != nil)
                         strongSelf.finishedWithResults(strongController, strongSelf->_selectionContext, strongSelf->_editingContext, item.asset, false, time);
+                    
+                    [strongSelf _dismissTransitionForResultController:strongController];
+                });
+            };
+            controller.sendWithTimer = ^{
+                __strong TGCameraController *strongSelf = weakSelf;
+                if (strongSelf == nil)
+                    return;
+                
+                strongSelf.presentTimerController(^(int32_t time) {
+                    __strong TGCameraController *strongSelf = weakSelf;
+                    __strong TGMediaPickerGalleryModel *strongModel = weakModel;
+                    
+                    if (strongSelf == nil || strongModel == nil)
+                        return;
+                    
+                    __strong TGModernGalleryController *strongController = weakGalleryController;
+                    if (strongController == nil)
+                        return;
+                    
+                    if ([item isKindOfClass:[TGMediaPickerGalleryVideoItem class]])
+                    {
+                        TGMediaPickerGalleryVideoItemView *itemView = (TGMediaPickerGalleryVideoItemView *)[strongController itemViewForItem:item];
+                        [itemView stop];
+                        [itemView setPlayButtonHidden:true animated:true];
+                    }
+                    
+                    TGMediaEditingContext *editingContext = strongSelf->_editingContext;
+                    NSMutableArray *items = [strongSelf->_selectionContext.selectedItems mutableCopy];
+                    [items addObject:item.asset];
+                    
+                    for (id<TGMediaEditableItem> editableItem in items) {
+                        [editingContext setTimer:@(time) forItem:editableItem];
+                    }
+                    
+                    if (strongSelf.finishedWithResults != nil)
+                        strongSelf.finishedWithResults(strongController, strongSelf->_selectionContext, strongSelf->_editingContext, item.asset, false, 0);
                     
                     [strongSelf _dismissTransitionForResultController:strongController];
                 });
@@ -1652,6 +1693,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                 intent = TGPhotoEditorControllerSignupAvatarIntent;
             }
             TGPhotoEditorController *controller = [[TGPhotoEditorController alloc] initWithContext:windowContext item:image intent:(TGPhotoEditorControllerFromCameraIntent | intent) adjustments:nil caption:nil screenImage:image availableTabs:[TGPhotoEditorController defaultTabsForAvatarIntent] selectedTab:TGPhotoEditorCropTab];
+            controller.stickersContext = _stickersContext;
             __weak TGPhotoEditorController *weakController = controller;
             controller.beginTransitionIn = ^UIView *(CGRect *referenceFrame, __unused UIView **parentView)
             {
@@ -1726,7 +1768,17 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
             
             controller.requestOriginalFullSizeImage = ^(id<TGMediaEditableItem> editableItem, NSTimeInterval position)
             {
-                return [editableItem originalImageSignal:position];
+                if (editableItem.isVideo) {
+                    if ([editableItem isKindOfClass:[TGMediaAsset class]]) {
+                        return [TGMediaAssetImageSignals avAssetForVideoAsset:(TGMediaAsset *)editableItem];
+                    } else if ([editableItem isKindOfClass:[TGCameraCapturedVideo class]]) {
+                        return [SSignal single:((TGCameraCapturedVideo *)editableItem).avAsset];
+                    } else {
+                        return [editableItem originalImageSignal:position];
+                    }
+                } else {
+                    return [editableItem originalImageSignal:position];
+                }
             };
             
             overlayController = (TGOverlayController *)controller;
@@ -2558,9 +2610,42 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                 NSMutableDictionary *dict = [[NSMutableDictionary alloc] init];
                 dict[@"type"] = @"editedPhoto";
                 dict[@"image"] = image;
-                
                 if (adjustments.paintingData.stickers.count > 0)
                     dict[@"stickers"] = adjustments.paintingData.stickers;
+                
+                bool animated = false;
+                for (TGPhotoPaintEntity *entity in adjustments.paintingData.entities) {
+                    if (entity.animated) {
+                        animated = true;
+                        break;
+                    }
+                }
+                
+                if (animated) {
+                    dict[@"isAnimation"] = @true;
+                    if ([adjustments isKindOfClass:[PGPhotoEditorValues class]]) {
+                        dict[@"adjustments"] = [TGVideoEditAdjustments editAdjustmentsWithPhotoEditorValues:(PGPhotoEditorValues *)adjustments];
+                    } else {
+                        dict[@"adjustments"] = adjustments;
+                    }
+                    
+                    NSString *filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSString alloc] initWithFormat:@"gifvideo_%x.jpg", (int)arc4random()]];
+                    NSData *data = UIImageJPEGRepresentation(image, 0.8);
+                    [data writeToFile:filePath atomically:true];
+                    dict[@"url"] = [NSURL fileURLWithPath:filePath];
+                    
+                    if ([adjustments cropAppliedForAvatar:false] || adjustments.hasPainting || adjustments.toolsApplied)
+                    {
+                        UIImage *paintingImage = adjustments.paintingData.stillImage;
+                        if (paintingImage == nil) {
+                            paintingImage = adjustments.paintingData.image;
+                        }
+                        UIImage *thumbnailImage = TGPhotoEditorVideoExtCrop(image, paintingImage, adjustments.cropOrientation, adjustments.cropRotation, adjustments.cropRect, adjustments.cropMirrored, TGScaleToFill(image.size, CGSizeMake(512, 512)), adjustments.originalSize, true, true, true);
+                        if (thumbnailImage != nil) {
+                            dict[@"previewImage"] = thumbnailImage;
+                        }
+                    }
+                }
                 
                 if (timer != nil)
                     dict[@"timer"] = timer;
@@ -2587,19 +2672,26 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
             
             UIImage *(^cropVideoThumbnail)(UIImage *, CGSize, CGSize, bool) = ^UIImage *(UIImage *image, CGSize targetSize, CGSize sourceSize, bool resize)
             {
-                if ([adjustments cropAppliedForAvatar:false] || adjustments.hasPainting)
+                if ([adjustments cropAppliedForAvatar:false] || adjustments.hasPainting || adjustments.toolsApplied)
                 {
                     CGRect scaledCropRect = CGRectMake(adjustments.cropRect.origin.x * image.size.width / adjustments.originalSize.width, adjustments.cropRect.origin.y * image.size.height / adjustments.originalSize.height, adjustments.cropRect.size.width * image.size.width / adjustments.originalSize.width, adjustments.cropRect.size.height * image.size.height / adjustments.originalSize.height);
-                    return TGPhotoEditorCrop(image, adjustments.paintingData.image, adjustments.cropOrientation, 0, scaledCropRect, adjustments.cropMirrored, targetSize, sourceSize, resize);
+                    UIImage *paintingImage = adjustments.paintingData.stillImage;
+                    if (paintingImage == nil) {
+                        paintingImage = adjustments.paintingData.image;
+                    }
+                    if (adjustments.toolsApplied) {
+                        image = [PGPhotoEditor resultImageForImage:image adjustments:adjustments];
+                    }
+                    return TGPhotoEditorCrop(image, paintingImage, adjustments.cropOrientation, 0, scaledCropRect, adjustments.cropMirrored, targetSize, sourceSize, resize);
                 }
                 
                 return image;
             };
             
-            CGSize imageSize = TGFillSize(asset.originalSize, CGSizeMake(384, 384));
+            CGSize imageSize = TGFillSize(asset.originalSize, CGSizeMake(512, 512));
             SSignal *trimmedVideoThumbnailSignal = [[TGMediaAssetImageSignals videoThumbnailForAVAsset:video.avAsset size:imageSize timestamp:CMTimeMakeWithSeconds(adjustments.trimStartValue, NSEC_PER_SEC)] map:^UIImage *(UIImage *image)
             {
-                    return cropVideoThumbnail(image, TGScaleToFill(asset.originalSize, CGSizeMake(256, 256)), asset.originalSize, true);
+                    return cropVideoThumbnail(image, TGScaleToFill(asset.originalSize, CGSizeMake(512, 512)), asset.originalSize, true);
             }];
             
             SSignal *videoThumbnailSignal = [inlineThumbnailSignal(asset) map:^UIImage *(UIImage *image)

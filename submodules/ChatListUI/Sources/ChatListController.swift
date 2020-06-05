@@ -584,7 +584,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController,
                         scrollToEndIfExists = true
                     }
                     
-                    strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peer.id), scrollToEndIfExists: scrollToEndIfExists, options: strongSelf.groupId == PeerGroupId.root ? [.removeOnMasterDetails] : [], parentGroupId: strongSelf.groupId, completion: { [weak self] controller in
+                    strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peer.id), scrollToEndIfExists: scrollToEndIfExists, animated: !scrollToEndIfExists, options: strongSelf.groupId == PeerGroupId.root ? [.removeOnMasterDetails] : [], parentGroupId: strongSelf.groupId, completion: { [weak self] controller in
                         self?.chatListDisplayNode.containerNode.currentItemNode.clearHighlightAnimated(true)
                         if let promoInfo = promoInfo {
                             switch promoInfo {
@@ -974,8 +974,14 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController,
                                     var found = false
                                     for filter in presetList {
                                         if filter.id == id {
-                                            strongSelf.push(chatListFilterAddChatsController(context: strongSelf.context, filter: filter))
-                                            f(.dismissWithoutContent)
+                                            let _ = (currentChatListFilters(postbox: strongSelf.context.account.postbox)
+                                            |> deliverOnMainQueue).start(next: { filters in
+                                                guard let strongSelf = self else {
+                                                    return
+                                                }
+                                                strongSelf.push(chatListFilterAddChatsController(context: strongSelf.context, filter: filter, allFilters: filters))
+                                                f(.dismissWithoutContent)
+                                            })
                                             found = true
                                             break
                                         }
@@ -1059,7 +1065,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController,
             return
         }
         
-        #if false && DEBUG
+        #if true && DEBUG
         DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 1.0, execute: { [weak self] in
             guard let strongSelf = self else {
                 return
@@ -1213,27 +1219,37 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController,
                 
                 strongSelf.processedFeaturedFilters = true
                 if hasFeatured {
-                    if let _ = strongSelf.validLayout, let parentController = strongSelf.parent as? TabBarController, let sourceFrame = parentController.frameForControllerTab(controller: strongSelf) {
-                        let absoluteFrame = sourceFrame
-                        let text: String
-                        if hasFilters {
-                            text = strongSelf.presentationData.strings.ChatList_TabIconFoldersTooltipNonEmptyFolders
-                            let _ = markChatListFeaturedFiltersAsSeen(postbox: strongSelf.context.account.postbox).start()
-                        } else {
-                            text = strongSelf.presentationData.strings.ChatList_TabIconFoldersTooltipEmptyFolders
-                        }
-                        
-                        let location = CGRect(origin: CGPoint(x: absoluteFrame.midX, y: absoluteFrame.minY - 8.0), size: CGSize())
-                        
-                        parentController.present(TooltipScreen(text: text, icon: .chatListPress, location: .point(location), shouldDismissOnTouch: { point in
-                            guard let strongSelf = self, let parentController = strongSelf.parent as? TabBarController else {
+                    if let _ = strongSelf.validLayout, let _ = strongSelf.parent as? TabBarController {
+                        let _ = (ApplicationSpecificNotice.incrementChatFolderTips(accountManager: strongSelf.context.sharedContext.accountManager)
+                        |> deliverOnMainQueue).start(next: { count in
+                            guard let strongSelf = self, let _ = strongSelf.validLayout, let parentController = strongSelf.parent as? TabBarController, let sourceFrame = parentController.frameForControllerTab(controller: strongSelf) else {
+                                return
+                            }
+                            if count >= 2 {
+                                return
+                            }
+                            
+                            let absoluteFrame = sourceFrame
+                            let text: String
+                            if hasFilters {
+                                text = strongSelf.presentationData.strings.ChatList_TabIconFoldersTooltipNonEmptyFolders
+                                let _ = markChatListFeaturedFiltersAsSeen(postbox: strongSelf.context.account.postbox).start()
+                            } else {
+                                text = strongSelf.presentationData.strings.ChatList_TabIconFoldersTooltipEmptyFolders
+                            }
+                            
+                            let location = CGRect(origin: CGPoint(x: absoluteFrame.midX, y: absoluteFrame.minY - 8.0), size: CGSize())
+                            
+                            parentController.present(TooltipScreen(text: text, icon: .chatListPress, location: .point(location), shouldDismissOnTouch: { point in
+                                guard let strongSelf = self, let parentController = strongSelf.parent as? TabBarController else {
+                                    return .dismiss(consume: false)
+                                }
+                                if parentController.isPointInsideContentArea(point: point) {
+                                    return .ignore
+                                }
                                 return .dismiss(consume: false)
-                            }
-                            if parentController.isPointInsideContentArea(point: point) {
-                                return .ignore
-                            }
-                            return .dismiss(consume: false)
-                        }), in: .current)
+                            }), in: .current)
+                        })
                     }
                 }
             }))
@@ -2037,6 +2053,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController,
             guard let strongSelf = self, let peer = peer, let chatPeer = peer.peers[peer.peerId], let mainPeer = peer.chatMainPeer else {
                 return
             }
+            strongSelf.view.window?.endEditing(true)
             
             var canRemoveGlobally = false
             let limitsConfiguration = strongSelf.context.currentLimitsConfiguration.with { $0 }

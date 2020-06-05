@@ -164,7 +164,7 @@
         
         if (recipientName.length > 0)
         {
-            _arrowView = [[UIImageView alloc] initWithImage:TGComponentsImageNamed(@"PhotoPickerArrow")];
+            _arrowView = [[UIImageView alloc] initWithImage: TGComponentsImageNamed(@"PhotoPickerArrow")];
             _arrowView.alpha = 0.45f;
             [_wrapperView addSubview:_arrowView];
             
@@ -458,10 +458,8 @@
         if (strongSelf == nil)
             return;
         
-        if (tab == TGPhotoEditorTimerTab)
-            [strongSelf openTimerSetup];
-        else
-            editorTabPressed(tab);
+        [strongSelf tooltipTimerTick];
+        editorTabPressed(tab);
     };
     _portraitToolbarView.tabPressed = tabPressed;
     _landscapeToolbarView.tabPressed = tabPressed;
@@ -879,19 +877,7 @@
         [timerButton setIconImage:defaultIcon activeIconImage:icon];
         
         TGPhotoEditorButton *landscapeTimerButton = [_landscapeToolbarView buttonForTab:TGPhotoEditorTimerTab];
-        
-        if ([self shouldDisplayTooltip])
-        {
-            willShowTimerTooltip = true;
-            TGDispatchAfter(0.5, dispatch_get_main_queue(), ^
-            {
-                if (!TGIsPad() && self.frame.size.width > self.frame.size.height)
-                    [self setupTooltip:[_landscapeToolbarView convertRect:landscapeTimerButton.frame toView:self]];
-                else
-                    [self setupTooltip:[_portraitToolbarView convertRect:timerButton.frame toView:self]];
-            });
-        }
-        
+                
         timerButton = landscapeTimerButton;
         [timerButton setIconImage:defaultIcon activeIconImage:icon];
         
@@ -899,8 +885,20 @@
             highlightedButtons |= TGPhotoEditorTimerTab;
     }
     
+    if ([self shouldDisplayTooltip])
+    {
+        willShowTimerTooltip = true;
+        TGDispatchAfter(0.5, dispatch_get_main_queue(), ^
+        {
+            if (!TGIsPad() && self.frame.size.width > self.frame.size.height)
+                [self setupTooltip:[_landscapeToolbarView convertRect:[_landscapeToolbarView doneButtonFrame] toView:self]];
+            else
+                [self setupTooltip:[_portraitToolbarView convertRect:[_portraitToolbarView doneButtonFrame] toView:self]];
+        });
+    }
+    
     if (adjustments.sendAsGif)
-        disabledButtons |= TGPhotoEditorToolsTab | TGPhotoEditorQualityTab;
+        disabledButtons |= TGPhotoEditorQualityTab;
     
     [_portraitToolbarView setEditButtonsHighlighted:highlightedButtons];
     [_landscapeToolbarView setEditButtonsHighlighted:highlightedButtons];
@@ -913,12 +911,12 @@
 
 - (bool)shouldDisplayTooltip
 {
-    return ![[[NSUserDefaults standardUserDefaults] objectForKey:@"TG_displayedMediaTimerTooltip_v0"] boolValue];
+    return ![[[NSUserDefaults standardUserDefaults] objectForKey:@"TG_displayedMediaTimerTooltip_v2"] boolValue];
 }
 
 - (void)setupTooltip:(CGRect)rect
 {
-    if (_tooltipContainerView != nil)
+    if (_tooltipContainerView != nil || !_hasTimer)
         return;
     
     _tooltipTimer = [TGTimerTarget scheduledMainThreadTimerWithTarget:self action:@selector(tooltipTimerTick) interval:2.5 repeat:false];
@@ -927,15 +925,16 @@
     [self addSubview:_tooltipContainerView];
     
     NSMutableArray *actions = [[NSMutableArray alloc] init];
-    [actions addObject:[[NSDictionary alloc] initWithObjectsAndKeys:TGLocalized(@"MediaPicker.TimerTooltip"), @"title", nil]];
+    [actions addObject:[[NSDictionary alloc] initWithObjectsAndKeys:TGLocalized(@"Media.SendingOptionsTooltip"), @"title", nil]];
     
+    _tooltipContainerView.menuView.multiline = true;
     [_tooltipContainerView.menuView setButtonsAndActions:actions watcherHandle:_actionHandle];
     [_tooltipContainerView.menuView sizeToFit];
     _tooltipContainerView.menuView.buttonHighlightDisabled = true;
     
     [_tooltipContainerView showMenuFromRect:rect animated:false];
     
-    [[NSUserDefaults standardUserDefaults] setObject:@true forKey:@"TG_displayedMediaTimerTooltip_v0"];
+    [[NSUserDefaults standardUserDefaults] setObject:@true forKey:@"TG_displayedMediaTimerTooltip_v2"];
 }
 
 - (void)tooltipTimerTick

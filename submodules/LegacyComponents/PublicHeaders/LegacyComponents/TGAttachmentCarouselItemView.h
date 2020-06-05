@@ -10,6 +10,7 @@
 @class TGViewController;
 @class TGAttachmentCameraView;
 @protocol TGModernGalleryTransitionHostScrollView;
+@protocol TGPhotoPaintStickersContext;
 
 @interface TGAttachmentCarouselCollectionView : UICollectionView
 
@@ -22,6 +23,7 @@
 @property (nonatomic, readonly) TGMediaSelectionContext *selectionContext;
 @property (nonatomic, readonly) TGMediaEditingContext *editingContext;
 @property (nonatomic, strong) TGSuggestionContext *suggestionContext;
+@property (nonatomic, strong) id<TGPhotoPaintStickersContext> stickersContext;
 @property (nonatomic) bool allowCaptions;
 @property (nonatomic) bool allowCaptionEntities;
 @property (nonatomic) bool inhibitDocumentCaptions;
@@ -34,6 +36,7 @@
 @property (nonatomic) bool hasSchedule;
 @property (nonatomic) bool reminder;
 @property (nonatomic, copy) void (^presentScheduleController)(void (^)(int32_t));
+@property (nonatomic, copy) void (^presentTimerController)(void (^)(int32_t));
 
 @property (nonatomic, strong) NSArray *underlyingViews;
 @property (nonatomic, assign) bool openEditor;

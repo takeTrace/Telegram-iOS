@@ -115,7 +115,7 @@ const CGFloat TGPhotoEditorToolbarSize = 49.0f;
     
     UIView *transitionViewSuperview = nil;
     UIImage *transitionImage = nil;
-    if ([referenceView isKindOfClass:[UIImageView class]])
+    if ([referenceView isKindOfClass:[UIImageView class]] && referenceView.subviews.count == 0)
         transitionImage = ((UIImageView *)referenceView).image;
     
     if (transitionImage != nil)
@@ -127,8 +127,8 @@ const CGFloat TGPhotoEditorToolbarSize = 49.0f;
     }
     else
     {
-        _transitionView = referenceView;
-        transitionViewSuperview = self.view;
+        _transitionView = [referenceView snapshotViewAfterScreenUpdates:false];
+        transitionViewSuperview = parentView;
     }
     
     
@@ -239,7 +239,7 @@ const CGFloat TGPhotoEditorToolbarSize = 49.0f;
         UIView *toTransitionView = nil;
         
         UIImage *transitionImage = nil;
-        if ([referenceView isKindOfClass:[UIImageView class]])
+        if ([referenceView isKindOfClass:[UIImageView class]] && referenceView.subviews.count == 0)
             transitionImage = ((UIImageView *)referenceView).image;
         
         if (transitionImage != nil)
@@ -250,7 +250,10 @@ const CGFloat TGPhotoEditorToolbarSize = 49.0f;
         }
         else
         {
-            toTransitionView = [referenceView snapshotViewAfterScreenUpdates:false];
+            bool wasHidden = referenceView.isHidden;
+            referenceView.hidden = false;
+            toTransitionView = [referenceView snapshotViewAfterScreenUpdates:true];
+            referenceView.hidden = wasHidden;
         }
         
         [parentView addSubview:toTransitionView];
@@ -446,11 +449,8 @@ const CGFloat TGPhotoEditorToolbarSize = 49.0f;
     if ([editorValues hasPainting])
         highlightedButtons |= TGPhotoEditorPaintTab;
     
-    if ([editorValues isKindOfClass:[PGPhotoEditorValues class]])
-    {
-        if ([(PGPhotoEditorValues *)editorValues toolsApplied])
-            highlightedButtons |= TGPhotoEditorToolsTab;
-    }
+    if ([editorValues toolsApplied])
+        highlightedButtons |= TGPhotoEditorToolsTab;
     
     return highlightedButtons;
 }

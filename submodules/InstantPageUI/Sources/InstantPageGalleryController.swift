@@ -113,7 +113,7 @@ public struct InstantPageGalleryEntry: Equatable {
                     nativeId = .instantPage(self.pageId, file.fileId)
                 }
                 
-                return UniversalVideoGalleryItem(context: context, presentationData: presentationData, content: NativeVideoContent(id: nativeId, fileReference: .webPage(webPage: WebpageReference(webPage), media: file), streamVideo: isMediaStreamable(media: file) ? .conservative : .none), originData: nil, indexData: indexData, contentInfo: .webPage(webPage, file), caption: caption, credit: credit, fromPlayingVideo: fromPlayingVideo, landscape: landscape, performAction: { _ in }, openActionOptions: { _ in }, storeMediaPlaybackState: { _, _ in })
+                return UniversalVideoGalleryItem(context: context, presentationData: presentationData, content: NativeVideoContent(id: nativeId, fileReference: .webPage(webPage: WebpageReference(webPage), media: file), streamVideo: isMediaStreamable(media: file) ? .conservative : .none), originData: nil, indexData: indexData, contentInfo: .webPage(webPage, file), caption: caption, credit: credit, fromPlayingVideo: fromPlayingVideo, landscape: landscape, performAction: { _ in }, openActionOptions: { _ in }, storeMediaPlaybackState: { _, _ in }, present: { _, _ in })
             } else {
                 var representations: [TelegramMediaImageRepresentation] = []
                 representations.append(contentsOf: file.previewRepresentations)
@@ -125,7 +125,7 @@ public struct InstantPageGalleryEntry: Equatable {
             }
         } else if let embedWebpage = self.media.media as? TelegramMediaWebpage, case let .Loaded(webpageContent) = embedWebpage.content {
             if let content = WebEmbedVideoContent(webPage: embedWebpage, webpageContent: webpageContent) {
-                return UniversalVideoGalleryItem(context: context, presentationData: presentationData, content: content, originData: nil, indexData: nil, contentInfo: .webPage(webPage, embedWebpage), caption: NSAttributedString(string: ""), fromPlayingVideo: fromPlayingVideo, landscape: landscape, performAction: { _ in }, openActionOptions: { _ in }, storeMediaPlaybackState: { _, _ in })
+                return UniversalVideoGalleryItem(context: context, presentationData: presentationData, content: content, originData: nil, indexData: nil, contentInfo: .webPage(webPage, embedWebpage), caption: NSAttributedString(string: ""), fromPlayingVideo: fromPlayingVideo, landscape: landscape, performAction: { _ in }, openActionOptions: { _ in }, storeMediaPlaybackState: { _, _ in }, present: { _, _ in })
             } else {
                 preconditionFailure()
             }
@@ -178,14 +178,14 @@ public class InstantPageGalleryController: ViewController, StandalonePresentable
         return self._hiddenMedia.get()
     }
     
-    private let replaceRootController: (ViewController, ValuePromise<Bool>?) -> Void
+    private let replaceRootController: (ViewController, Promise<Bool>?) -> Void
     private let baseNavigationController: NavigationController?
     
     var openUrl: ((InstantPageUrlItem) -> Void)?
     private var innerOpenUrl: (InstantPageUrlItem) -> Void
     private var openUrlOptions: (InstantPageUrlItem) -> Void
     
-    public init(context: AccountContext, webPage: TelegramMediaWebpage, message: Message? = nil, entries: [InstantPageGalleryEntry], centralIndex: Int, fromPlayingVideo: Bool = false, landscape: Bool = false, timecode: Double? = nil, replaceRootController: @escaping (ViewController, ValuePromise<Bool>?) -> Void, baseNavigationController: NavigationController?) {
+    public init(context: AccountContext, webPage: TelegramMediaWebpage, message: Message? = nil, entries: [InstantPageGalleryEntry], centralIndex: Int, fromPlayingVideo: Bool = false, landscape: Bool = false, timecode: Double? = nil, replaceRootController: @escaping (ViewController, Promise<Bool>?) -> Void, baseNavigationController: NavigationController?) {
         self.context = context
         self.webPage = webPage
         self.message = message

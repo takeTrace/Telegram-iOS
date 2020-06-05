@@ -20,6 +20,8 @@
 
 #import <LegacyComponents/TGSecretTimerMenu.h>
 
+#import "TGPhotoEntitiesContainerView.h"
+
 @interface TGMediaPickerGalleryModel ()
 {
     TGMediaPickerGalleryInterfaceView *_interfaceView;
@@ -361,11 +363,17 @@
     UIView *referenceParentView = nil;
     UIImage *image = nil;
     
+    TGPhotoEntitiesContainerView *entitiesView = nil;
+    
     bool isVideo = false;
     if ([editorReferenceView isKindOfClass:[UIImageView class]])
     {
         screenImage = [(UIImageView *)editorReferenceView image];
         referenceView = editorReferenceView;
+        
+        if ([editorReferenceView.subviews.firstObject.subviews.firstObject.subviews.firstObject isKindOfClass:[TGPhotoEntitiesContainerView class]]) {
+            entitiesView = editorReferenceView.subviews.firstObject.subviews.firstObject.subviews.firstObject;
+        }
     }
     else if ([editorReferenceView isKindOfClass:[TGMediaPickerGalleryVideoItemView class]])
     {
@@ -378,6 +386,8 @@
         referenceView = [[UIImageView alloc] initWithImage:screenImage];
         referenceParentView = editorReferenceView;
         
+        entitiesView = [videoItemView entitiesView];
+        
         isVideo = true;
     }
     
@@ -386,7 +396,9 @@
     
     TGPhotoEditorControllerIntent intent = isVideo ? TGPhotoEditorControllerVideoIntent : TGPhotoEditorControllerGenericIntent;
     TGPhotoEditorController *controller = [[TGPhotoEditorController alloc] initWithContext:_context item:item.editableMediaItem intent:intent adjustments:editorValues caption:caption screenImage:screenImage availableTabs:_interfaceView.currentTabs selectedTab:tab];
+    controller.entitiesView = entitiesView;
     controller.editingContext = _editingContext;
+    controller.stickersContext = _stickersContext;
     self.editorController = controller;
     controller.suggestionContext = self.suggestionContext;
     controller.willFinishEditing = ^(id<TGMediaEditAdjustments> adjustments, id temporaryRep, bool hasChanges)
@@ -559,7 +571,17 @@
     
     controller.requestOriginalFullSizeImage = ^SSignal *(id<TGMediaEditableItem> editableItem, NSTimeInterval position)
     {
-        return [editableItem originalImageSignal:position];
+        if (editableItem.isVideo) {
+            if ([editableItem isKindOfClass:[TGMediaAsset class]]) {
+                return [TGMediaAssetImageSignals avAssetForVideoAsset:(TGMediaAsset *)editableItem];
+            } else if ([editableItem isKindOfClass:[TGCameraCapturedVideo class]]) {
+                return [SSignal single:((TGCameraCapturedVideo *)editableItem).avAsset];
+            } else {
+                return [editableItem originalImageSignal:position];
+            }
+        } else {
+            return [editableItem originalImageSignal:position];
+        }
     };
     
     controller.requestAdjustments = ^id<TGMediaEditAdjustments> (id<TGMediaEditableItem> editableItem)

@@ -39,7 +39,6 @@
 #import "TGPhotoToolsController.h"
 #import "TGPhotoPaintController.h"
 #import "TGPhotoQualityController.h"
-#import "TGPhotoEditorItemController.h"
 
 #import "TGMessageImageViewOverlayView.h"
 
@@ -70,6 +69,12 @@
     id<TGMediaEditableItem> _item;
     UIImage *_screenImage;
     UIImage *_thumbnailImage;
+    
+    AVPlayerItem *_playerItem;
+    AVPlayer *_player;
+    SMetaDisposable *_playerItemDisposable;
+    id _playerStartedObserver;
+    id _playerReachedEndObserver;
     
     id<TGMediaEditAdjustments> _initialAdjustments;
     NSString *_caption;
@@ -378,18 +383,38 @@
     }
     else
     {
-        signal = [[[[self.requestOriginalFullSizeImage(_item, position) takeLast] deliverOn:_queue] filter:^bool(id image)
-        {
-            return [image isKindOfClass:[UIImage class]];
-        }] map:^UIImage *(UIImage *image)
-        {
-            return TGPhotoEditorCrop(image, nil, _photoEditor.cropOrientation, _photoEditor.cropRotation, _photoEditor.cropRect, _photoEditor.cropMirrored, TGPhotoEditorScreenImageMaxSize(), _photoEditor.originalSize, true);
-        }];
+        if (_item.isVideo) {
+            signal = [[self.requestOriginalFullSizeImage(_item, position) takeLast] deliverOn:_queue];
+        } else {
+            signal = [[[[self.requestOriginalFullSizeImage(_item, position) takeLast] deliverOn:_queue] filter:^bool(id image)
+            {
+                return [image isKindOfClass:[UIImage class]];
+            }] map:^UIImage *(UIImage *image)
+            {
+                return TGPhotoEditorCrop(image, nil, _photoEditor.cropOrientation, _photoEditor.cropRotation, _photoEditor.cropRect, _photoEditor.cropMirrored, TGPhotoEditorScreenImageMaxSize(), _photoEditor.originalSize, true);
+            }];
+        }
     }
     
-    [signal startWithNext:^(UIImage *next)
+    [signal startWithNext:^(id next)
     {
-        [_photoEditor setImage:next forCropRect:_photoEditor.cropRect cropRotation:_photoEditor.cropRotation cropOrientation:_photoEditor.cropOrientation cropMirrored:_photoEditor.cropMirrored fullSize:false];
+        if ([next isKindOfClass:[UIImage class]]) {
+            [_photoEditor setImage:(UIImage *)next forCropRect:_photoEditor.cropRect cropRotation:_photoEditor.cropRotation cropOrientation:_photoEditor.cropOrientation cropMirrored:_photoEditor.cropMirrored fullSize:false];
+        } else if ([next isKindOfClass:[AVAsset class]]) {
+            _playerItem = [AVPlayerItem playerItemWithAsset:(AVAsset *)next];
+            _player = [AVPlayer playerWithPlayerItem:_playerItem];
+            _player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
+            _player.muted = true;
+            
+            [_photoEditor setPlayerItem:_playerItem forCropRect:_photoEditor.cropRect cropRotation:0.0 cropOrientation:_photoEditor.cropOrientation cropMirrored:_photoEditor.cropMirrored];
+                        
+            TGDispatchOnMainThread(^
+            {
+                [_previewView performTransitionInWithCompletion:^
+                {
+                }];
+            });
+        }
         
         if (_ignoreDefaultPreviewViewTransitionIn)
         {
@@ -415,6 +440,66 @@
             }];
         }
     }];
+}
+
+- (void)_setupPlaybackStartedObserver
+{
+    CMTime startTime = CMTimeMake(10, 100);
+    if (_photoEditor.trimStartValue > DBL_EPSILON)
+        startTime = CMTimeMakeWithSeconds(_photoEditor.trimStartValue + 0.1, NSEC_PER_SEC);
+    
+    __weak TGPhotoEditorController *weakSelf = self;
+    _playerStartedObserver = [_player addBoundaryTimeObserverForTimes:@[[NSValue valueWithCMTime:startTime]] queue:NULL usingBlock:^
+    {
+        __strong TGPhotoEditorController *strongSelf = weakSelf;
+        if (strongSelf == nil)
+            return;
+    
+        [strongSelf->_player removeTimeObserver:strongSelf->_playerStartedObserver];
+        strongSelf->_playerStartedObserver = nil;
+        
+        if (CMTimeGetSeconds(strongSelf->_player.currentItem.duration) > 0)
+            [strongSelf _setupPlaybackReachedEndObserver];
+    }];
+}
+
+- (void)_setupPlaybackReachedEndObserver
+{
+    CMTime endTime = CMTimeSubtract(_player.currentItem.duration, CMTimeMake(10, 100));
+    if (_photoEditor.trimEndValue > DBL_EPSILON && _photoEditor.trimEndValue < CMTimeGetSeconds(_player.currentItem.duration))
+        endTime = CMTimeMakeWithSeconds(_photoEditor.trimEndValue - 0.1, NSEC_PER_SEC);
+    
+    CMTime startTime = CMTimeMake(5, 100);
+    if (_photoEditor.trimStartValue > DBL_EPSILON)
+        startTime = CMTimeMakeWithSeconds(_photoEditor.trimStartValue + 0.05, NSEC_PER_SEC);
+    
+    __weak TGPhotoEditorController *weakSelf = self;
+    _playerReachedEndObserver = [_player addBoundaryTimeObserverForTimes:@[[NSValue valueWithCMTime:endTime]] queue:NULL usingBlock:^
+    {
+        __strong TGPhotoEditorController *strongSelf = weakSelf;
+        if (strongSelf != nil)
+            [strongSelf->_player seekToTime:startTime];
+    }];
+}
+
+- (void)startVideoPlayback {
+    NSTimeInterval startPosition = 0.0f;
+    if (_photoEditor.trimStartValue > DBL_EPSILON)
+        startPosition = _photoEditor.trimStartValue;
+    
+    CMTime targetTime = CMTimeMakeWithSeconds(startPosition, NSEC_PER_SEC);
+    [_player.currentItem seekToTime:targetTime toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+    
+    [self _setupPlaybackStartedObserver];
+    [_player play];
+}
+
+- (void)stopVideoPlayback {
+    if (_playerStartedObserver != nil)
+        [_player removeTimeObserver:_playerStartedObserver];
+    if (_playerReachedEndObserver != nil)
+        [_player removeTimeObserver:_playerReachedEndObserver];
+    [_player pause];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -573,6 +658,7 @@
     
     bool hasImageAdjustments = editorValues.toolsApplied || saveOnly;
     bool hasPainting = editorValues.hasPainting;
+    bool hasAnimation = editorValues.paintingData.hasAnimation;
     
     SSignal *(^imageCropSignal)(UIImage *, bool) = ^(UIImage *image, bool resize)
     {
@@ -594,14 +680,17 @@
             [photoEditor setImage:image forCropRect:photoEditor.cropRect cropRotation:photoEditor.cropRotation cropOrientation:photoEditor.cropOrientation cropMirrored:photoEditor.cropMirrored fullSize:true];
             [photoEditor createResultImageWithCompletion:^(UIImage *result)
             {
-                if (hasPainting)
-                {
-                    result = TGPaintCombineCroppedImages(result, editorValues.paintingData.image, true, photoEditor.originalSize, photoEditor.cropRect, photoEditor.cropOrientation, photoEditor.cropRotation, photoEditor.cropMirrored);
-                    [TGPaintingData facilitatePaintingData:editorValues.paintingData];
-                }
-                
-                [subscriber putNext:result];
-                [subscriber putCompletion];
+                [_queue dispatch:^{
+                    UIImage *final = result;
+                    if (hasPainting)
+                    {
+                        final = TGPaintCombineCroppedImages(final, editorValues.paintingData.image, true, photoEditor.originalSize, photoEditor.cropRect, photoEditor.cropOrientation, photoEditor.cropRotation, photoEditor.cropMirrored);
+                        [TGPaintingData facilitatePaintingData:editorValues.paintingData];
+                    }
+                    
+                    [subscriber putNext:final];
+                    [subscriber putCompletion];
+                }];
             }];
             
             return nil;
@@ -633,14 +722,14 @@
         {
             if (!hasImageAdjustments)
             {
-                if (hasPainting && self.didFinishRenderingFullSizeImage != nil)
+                if (hasPainting && !hasAnimation && self.didFinishRenderingFullSizeImage != nil)
                     self.didFinishRenderingFullSizeImage(image);
 
                 return image;
             }
             else
             {
-                if (!saveOnly && self.didFinishRenderingFullSizeImage != nil)
+                if (!saveOnly && !hasAnimation && self.didFinishRenderingFullSizeImage != nil)
                     self.didFinishRenderingFullSizeImage(image);
                 
                 return TGPhotoEditorFitImage(image, TGPhotoEditorResultImageMaxSize);
@@ -831,8 +920,18 @@
         case TGPhotoEditorPaintTab:
         {
             TGPhotoPaintController *paintController = [[TGPhotoPaintController alloc] initWithContext:_context photoEditor:_photoEditor previewView:_previewView];
+            paintController.stickersContext = _stickersContext;
             paintController.toolbarLandscapeSize = TGPhotoEditorToolbarSize;
-            
+            paintController.controlVideoPlayback = ^(bool play) {
+                __strong TGPhotoEditorController *strongSelf = weakSelf;
+                if (strongSelf == nil)
+                    return;
+                if (play) {
+                    [strongSelf->_player play];
+                } else {
+                    [strongSelf->_player pause];
+                }
+            };
             paintController.beginTransitionIn = ^UIView *(CGRect *referenceFrame, UIView **parentView, bool *noTransitionView)
             {
                 __strong TGPhotoEditorController *strongSelf = weakSelf;
@@ -855,6 +954,7 @@
                     strongSelf.finishedTransitionIn();
                 
                 strongSelf->_switchingTab = false;
+                [strongSelf startVideoPlayback];
             };
             
             controller = paintController;
@@ -1104,6 +1204,8 @@
                     strongSelf.finishedTransitionIn();
                 
                 strongSelf->_switchingTab = false;
+                
+                [strongSelf startVideoPlayback];
             };
             
             controller = toolsController;
@@ -1394,12 +1496,12 @@
     [_currentTabController prepareTransitionOutSaving:true];
     
     TGPaintingData *paintingData = _photoEditor.paintingData;
+
     bool saving = true;
     if ([_currentTabController isKindOfClass:[TGPhotoPaintController class]])
     {
         TGPhotoPaintController *paintController = (TGPhotoPaintController *)_currentTabController;
         paintingData = [paintController paintingData];
-        
         _photoEditor.paintingData = paintingData;
         
         if (paintingData != nil)
@@ -1441,7 +1543,7 @@
         TGVideoEditAdjustments *adjustments = [_photoEditor exportAdjustmentsWithPaintingData:paintingData];
         bool hasChanges = !(_initialAdjustments == nil && [adjustments isDefaultValuesForAvatar:false] && adjustments.cropOrientation == UIImageOrientationUp);
         
-        if (adjustments.paintingData != nil || adjustments.hasPainting != _initialAdjustments.hasPainting)
+        if (adjustments.paintingData != nil || adjustments.hasPainting != _initialAdjustments.hasPainting || adjustments.toolsApplied)
         {
             [[SQueue concurrentDefaultQueue] dispatch:^
             {
@@ -1470,27 +1572,44 @@
                     UIImage *image = [UIImage imageWithCGImage:imageRef];
                     CGImageRelease(imageRef);
                     
-                    CGSize thumbnailSize = TGPhotoThumbnailSizeForCurrentScreen();
-                    thumbnailSize.width = CGCeil(thumbnailSize.width);
-                    thumbnailSize.height = CGCeil(thumbnailSize.height);
+                    if (adjustments.toolsApplied) {
+                        image = [PGPhotoEditor resultImageForImage:image adjustments:adjustments];
+                    }
                     
-                    CGSize fillSize = TGScaleToFillSize(videoDimensions, thumbnailSize);
+                    UIImage *paintingImage = adjustments.paintingData.stillImage;
+                    if (paintingImage == nil) {
+                        paintingImage = adjustments.paintingData.image;
+                    }
                     
-                    UIImage *thumbnailImage = nil;
-                    
+                    CGSize fillSize = TGScaleToFillSize(videoDimensions, image.size);
+                    UIImage *fullImage = nil;
                     UIGraphicsBeginImageContextWithOptions(fillSize, true, 0.0f);
                     CGContextRef context = UIGraphicsGetCurrentContext();
                     CGContextSetInterpolationQuality(context, kCGInterpolationMedium);
                     
                     [image drawInRect:CGRectMake(0, 0, fillSize.width, fillSize.height)];
+                    [paintingImage drawInRect:CGRectMake(0, 0, fillSize.width, fillSize.height)];
                     
-                    if (adjustments.paintingData.image != nil)
-                        [adjustments.paintingData.image drawInRect:CGRectMake(0, 0, fillSize.width, fillSize.height)];
+                    fullImage = UIGraphicsGetImageFromCurrentImageContext();
+                    UIGraphicsEndImageContext();
+                    
+                    CGSize thumbnailSize = TGPhotoThumbnailSizeForCurrentScreen();
+                    thumbnailSize.width = CGCeil(thumbnailSize.width);
+                    thumbnailSize.height = CGCeil(thumbnailSize.height);
+                    
+                    fillSize = TGScaleToFillSize(videoDimensions, thumbnailSize);
+                    UIImage *thumbnailImage = nil;
+                    UIGraphicsBeginImageContextWithOptions(fillSize, true, 0.0f);
+                    context = UIGraphicsGetCurrentContext();
+                    CGContextSetInterpolationQuality(context, kCGInterpolationMedium);
+                    
+                    [image drawInRect:CGRectMake(0, 0, fillSize.width, fillSize.height)];
+                    [paintingImage drawInRect:CGRectMake(0, 0, fillSize.width, fillSize.height)];
                     
                     thumbnailImage = UIGraphicsGetImageFromCurrentImageContext();
                     UIGraphicsEndImageContext();
                     
-                    [_editingContext setImage:image thumbnailImage:thumbnailImage forItem:_item synchronous:true];
+                    [_editingContext setImage:fullImage thumbnailImage:thumbnailImage forItem:_item synchronous:true];
                 }];
             }];
         }

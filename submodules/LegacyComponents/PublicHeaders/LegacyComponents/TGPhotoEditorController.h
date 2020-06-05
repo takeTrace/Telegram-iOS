@@ -11,6 +11,9 @@
 @class TGSuggestionContext;
 @class TGPhotoEditorController;
 
+@protocol TGPhotoPaintStickersContext;
+@class TGPhotoEntitiesContainerView;
+
 typedef enum {
     TGPhotoEditorControllerGenericIntent = 0,
     TGPhotoEditorControllerAvatarIntent = (1 << 0),
@@ -24,6 +27,7 @@ typedef enum {
 
 @property (nonatomic, strong) TGSuggestionContext *suggestionContext;
 @property (nonatomic, strong) TGMediaEditingContext *editingContext;
+@property (nonatomic, strong) id<TGPhotoPaintStickersContext> stickersContext;
 
 @property (nonatomic, copy) UIView *(^beginTransitionIn)(CGRect *referenceFrame, UIView **parentView);
 @property (nonatomic, copy) void (^finishedTransitionIn)(void);
@@ -50,6 +54,8 @@ typedef enum {
 @property (nonatomic, assign) bool skipInitialTransition;
 @property (nonatomic, assign) bool dontHideStatusBar;
 @property (nonatomic, strong) PGCameraShotMetadata *metadata;
+
+@property (nonatomic, strong) TGPhotoEntitiesContainerView *entitiesView;
 
 - (instancetype)initWithContext:(id<LegacyComponentsContext>)context item:(id<TGMediaEditableItem>)item intent:(TGPhotoEditorControllerIntent)intent adjustments:(id<TGMediaEditAdjustments>)adjustments caption:(NSString *)caption screenImage:(UIImage *)screenImage availableTabs:(TGPhotoEditorTab)availableTabs selectedTab:(TGPhotoEditorTab)selectedTab;
 

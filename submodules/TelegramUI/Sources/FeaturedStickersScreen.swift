@@ -272,9 +272,13 @@ private final class FeaturedStickersScreenNode: ViewControllerTracingNode {
         let inputNodeInteraction = ChatMediaInputNodeInteraction(
             navigateToCollectionId: { _ in
             },
+            navigateBackToStickers: {
+            },
+            setGifMode: { _ in
+            },
             openSettings: {
             },
-            toggleSearch: { _, _ in
+            toggleSearch: { _, _, _ in
             },
             openPeerSpecificSettings: {
             },

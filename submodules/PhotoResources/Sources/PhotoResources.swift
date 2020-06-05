@@ -324,12 +324,20 @@ private func chatMessageImageFileThumbnailDatas(account: Account, fileReference:
 
 private func chatMessageVideoDatas(postbox: Postbox, fileReference: FileMediaReference, thumbnailSize: Bool = false, onlyFullSize: Bool = false, synchronousLoad: Bool = false, autoFetchFullSizeThumbnail: Bool = false) -> Signal<Tuple3<Data?, Tuple2<Data, String>?, Bool>, NoError> {
     let fullSizeResource = fileReference.media.resource
+    var reducedSizeResource: MediaResource?
+    if let videoThumbnail = fileReference.media.videoThumbnails.first {
+        reducedSizeResource = videoThumbnail.resource
+    }
     
     let thumbnailRepresentation = smallestImageRepresentation(fileReference.media.previewRepresentations)
     let thumbnailResource = thumbnailRepresentation?.resource
     
     let maybeFullSize = postbox.mediaBox.cachedResourceRepresentation(fullSizeResource, representation: thumbnailSize ? CachedScaledVideoFirstFrameRepresentation(size: CGSize(width: 160.0, height: 160.0)) : CachedVideoFirstFrameRepresentation(), complete: false, fetch: false, attemptSynchronously: synchronousLoad)
     let fetchedFullSize = postbox.mediaBox.cachedResourceRepresentation(fullSizeResource, representation: thumbnailSize ? CachedScaledVideoFirstFrameRepresentation(size: CGSize(width: 160.0, height: 160.0)) : CachedVideoFirstFrameRepresentation(), complete: false, fetch: true, attemptSynchronously: synchronousLoad)
+    var fetchedReducedSize: Signal<MediaResourceData, NoError> = .single(MediaResourceData(path: "", offset: 0, size: 0, complete: false))
+    if let reducedSizeResource = reducedSizeResource {
+        fetchedReducedSize = postbox.mediaBox.cachedResourceRepresentation(reducedSizeResource, representation: thumbnailSize ? CachedScaledVideoFirstFrameRepresentation(size: CGSize(width: 160.0, height: 160.0)) : CachedVideoFirstFrameRepresentation(), complete: false, fetch: true, attemptSynchronously: synchronousLoad)
+    }
     
     let signal = maybeFullSize
     |> take(1)
@@ -391,11 +399,29 @@ private func chatMessageVideoDatas(postbox: Postbox, fileReference: FileMediaRef
                 return Tuple(data == nil ? nil : Tuple(data!, next.path), next.complete)
             }
             
+            let reducedSizeDataAndPath = Signal<MediaResourceData, NoError> { subscriber in
+                let dataDisposable = fetchedReducedSize.start(next: { next in
+                    subscriber.putNext(next)
+                }, completed: {
+                    subscriber.putCompletion()
+                })
+                return ActionDisposable {
+                    dataDisposable.dispose()
+                }
+            }
+            |> map { next -> Tuple2<Tuple2<Data, String>?, Bool> in
+                let data = next.size == 0 ? nil : try? Data(contentsOf: URL(fileURLWithPath: next.path), options: .mappedIfSafe)
+                return Tuple(data == nil ? nil : Tuple(data!, next.path), next.complete)
+            }
+            
             return thumbnail
             |> mapToSignal { thumbnailData in
-                return fullSizeDataAndPath
-                |> map { value in
-                    return Tuple(thumbnailData, value._0, value._1)
+                return combineLatest(fullSizeDataAndPath, reducedSizeDataAndPath)
+                |> map { fullSize, reducedSize in
+                    if !fullSize._1 && reducedSize._1 {
+                        return Tuple(thumbnailData, reducedSize._0, false)
+                    }
+                    return Tuple(thumbnailData, fullSize._0, fullSize._1)
                 }
             }
         }
@@ -1279,14 +1305,14 @@ public func gifPaneVideoThumbnail(account: Account, videoReference: FileMediaRef
     }
 }
 
-public func mediaGridMessageVideo(postbox: Postbox, videoReference: FileMediaReference, onlyFullSize: Bool = false, synchronousLoad: Bool = false, autoFetchFullSizeThumbnail: Bool = false) -> Signal<(TransformImageArguments) -> DrawingContext?, NoError> {
-    return internalMediaGridMessageVideo(postbox: postbox, videoReference: videoReference, onlyFullSize: onlyFullSize, synchronousLoad: synchronousLoad, autoFetchFullSizeThumbnail: autoFetchFullSizeThumbnail)
+public func mediaGridMessageVideo(postbox: Postbox, videoReference: FileMediaReference, onlyFullSize: Bool = false, synchronousLoad: Bool = false, autoFetchFullSizeThumbnail: Bool = false, overlayColor: UIColor? = nil, nilForEmptyResult: Bool = false) -> Signal<(TransformImageArguments) -> DrawingContext?, NoError> {
+    return internalMediaGridMessageVideo(postbox: postbox, videoReference: videoReference, onlyFullSize: onlyFullSize, synchronousLoad: synchronousLoad, autoFetchFullSizeThumbnail: autoFetchFullSizeThumbnail, overlayColor: overlayColor, nilForEmptyResult: nilForEmptyResult)
     |> map {
         return $0.1
     }
 }
 
-public func internalMediaGridMessageVideo(postbox: Postbox, videoReference: FileMediaReference, imageReference: ImageMediaReference? = nil, onlyFullSize: Bool = false, synchronousLoad: Bool = false, autoFetchFullSizeThumbnail: Bool = false) -> Signal<(() -> CGSize?, (TransformImageArguments) -> DrawingContext?), NoError> {
+public func internalMediaGridMessageVideo(postbox: Postbox, videoReference: FileMediaReference, imageReference: ImageMediaReference? = nil, onlyFullSize: Bool = false, synchronousLoad: Bool = false, autoFetchFullSizeThumbnail: Bool = false, overlayColor: UIColor? = nil, nilForEmptyResult: Bool = false) -> Signal<(() -> CGSize?, (TransformImageArguments) -> DrawingContext?), NoError> {
     let signal: Signal<Tuple3<Data?, Tuple2<Data, String>?, Bool>, NoError>
     if let imageReference = imageReference {
         signal = chatMessagePhotoDatas(postbox: postbox, photoReference: imageReference, tryAdditionalRepresentations: true, synchronousLoad: synchronousLoad)
@@ -1320,6 +1346,12 @@ public func internalMediaGridMessageVideo(postbox: Postbox, videoReference: File
             }
             return nil
         }, { arguments in
+            if nilForEmptyResult {
+                if thumbnailData == nil && fullSizeData == nil {
+                    return nil
+                }
+            }
+            
             let context = DrawingContext(size: arguments.drawingSize, clear: true)
             
             let drawingRect = arguments.drawingRect
@@ -1477,6 +1509,14 @@ public func internalMediaGridMessageVideo(postbox: Postbox, videoReference: File
                 if let fullSizeImage = fullSizeImage {
                     c.interpolationQuality = .medium
                     drawImage(context: c, image: fullSizeImage, orientation: imageOrientation, in: fittedRect)
+                }
+            }
+            
+            if let overlayColor = overlayColor {
+                context.withFlippedContext { c in
+                    c.setBlendMode(.normal)
+                    c.setFillColor(overlayColor.cgColor)
+                    c.fill(arguments.drawingRect)
                 }
             }
             
@@ -2400,7 +2440,7 @@ private func drawAlbumArtPlaceholder(into c: CGContext, arguments: TransformImag
     }
 }
 
-public func playerAlbumArt(postbox: Postbox, fileReference: FileMediaReference?, albumArt: SharedMediaPlaybackAlbumArt?, thumbnail: Bool) -> Signal<(TransformImageArguments) -> DrawingContext?, NoError> {
+public func playerAlbumArt(postbox: Postbox, fileReference: FileMediaReference?, albumArt: SharedMediaPlaybackAlbumArt?, thumbnail: Bool, overlayColor: UIColor? = nil, emptyColor: UIColor? = nil) -> Signal<(TransformImageArguments) -> DrawingContext?, NoError> {
     var fileArtworkData: Signal<Data?, NoError> = .single(nil)
     if let fileReference = fileReference {
         let size = thumbnail ? CGSize(width: 48.0, height: 48.0) : CGSize(width: 320.0, height: 320.0)
@@ -2471,10 +2511,22 @@ public func playerAlbumArt(postbox: Postbox, fileReference: FileMediaReference?,
                 let imageSize = sourceImage.size.aspectFilled(arguments.drawingRect.size)
                 context.withFlippedContext { c in
                     c.draw(cgImage, in: CGRect(origin: CGPoint(x: floor((arguments.drawingRect.size.width - imageSize.width) / 2.0), y: floor((arguments.drawingRect.size.height - imageSize.height) / 2.0)), size: imageSize))
+                    if let overlayColor = overlayColor {
+                        c.setFillColor(overlayColor.cgColor)
+                        c.fill(arguments.drawingRect)
+                    }
                 }
             } else {
-                context.withFlippedContext { c in
-                    drawAlbumArtPlaceholder(into: c, arguments: arguments, thumbnail: thumbnail)
+                if let emptyColor = emptyColor {
+                    context.withFlippedContext { c in
+                        let rect = arguments.drawingRect
+                        c.setFillColor(emptyColor.cgColor)
+                        c.fill(rect)
+                    }
+                } else {
+                    context.withFlippedContext { c in
+                        drawAlbumArtPlaceholder(into: c, arguments: arguments, thumbnail: thumbnail)
+                    }
                 }
             }
             

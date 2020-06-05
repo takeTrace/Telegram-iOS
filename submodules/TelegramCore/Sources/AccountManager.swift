@@ -158,6 +158,9 @@ private var declaredEncodables: Void = {
     declareEncodable(ChatListFiltersFeaturedState.self, f: { ChatListFiltersFeaturedState(decoder: $0) })
     declareEncodable(SynchronizeChatListFiltersOperation.self, f: { SynchronizeChatListFiltersOperation(decoder: $0) })
     declareEncodable(PromoChatListItem.self, f: { PromoChatListItem(decoder: $0) })
+    declareEncodable(TelegramMediaFile.VideoThumbnail.self, f: { TelegramMediaFile.VideoThumbnail(decoder: $0) })
+    declareEncodable(CachedChatContextResult.self, f: { CachedChatContextResult(decoder: $0) })
+    declareEncodable(PeerAccessRestrictionInfo.self, f: { PeerAccessRestrictionInfo(decoder: $0) })
     
     return
 }()

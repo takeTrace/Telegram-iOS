@@ -801,8 +801,9 @@ const NSUInteger TGAttachmentDisplayedAssetLimit = 500;
     if ([cell isKindOfClass:[TGAttachmentAssetCell class]])
         thumbnailImage = cell.imageView.image;
     
-    TGMediaPickerModernGalleryMixin *mixin = [[TGMediaPickerModernGalleryMixin alloc] initWithContext:_context item:asset fetchResult:_fetchResult parentController:self.parentController thumbnailImage:thumbnailImage selectionContext:_selectionContext editingContext:_editingContext suggestionContext:self.suggestionContext hasCaptions:(_allowCaptions && !_forProfilePhoto) allowCaptionEntities:self.allowCaptionEntities hasTimer:self.hasTimer onlyCrop:self.onlyCrop inhibitDocumentCaptions:_inhibitDocumentCaptions inhibitMute:self.inhibitMute asFile:self.asFile itemsLimit:TGAttachmentDisplayedAssetLimit recipientName:self.recipientName hasSilentPosting:self.hasSilentPosting hasSchedule:self.hasSchedule reminder:self.reminder];
+    TGMediaPickerModernGalleryMixin *mixin = [[TGMediaPickerModernGalleryMixin alloc] initWithContext:_context item:asset fetchResult:_fetchResult parentController:self.parentController thumbnailImage:thumbnailImage selectionContext:_selectionContext editingContext:_editingContext suggestionContext:self.suggestionContext hasCaptions:(_allowCaptions && !_forProfilePhoto) allowCaptionEntities:self.allowCaptionEntities hasTimer:self.hasTimer onlyCrop:self.onlyCrop inhibitDocumentCaptions:_inhibitDocumentCaptions inhibitMute:self.inhibitMute asFile:self.asFile itemsLimit:TGAttachmentDisplayedAssetLimit recipientName:self.recipientName hasSilentPosting:self.hasSilentPosting hasSchedule:self.hasSchedule reminder:self.reminder stickersContext:self.stickersContext];
     mixin.presentScheduleController = self.presentScheduleController;
+    mixin.presentTimerController = self.presentTimerController;
     __weak TGAttachmentCarouselItemView *weakSelf = self;
     mixin.thumbnailSignalForItem = ^SSignal *(id item)
     {
@@ -866,6 +867,7 @@ const NSUInteger TGAttachmentDisplayedAssetLimit = 500;
         
         TGPhotoEditorController *controller = [[TGPhotoEditorController alloc] initWithContext:[windowManager context] item:asset intent:_disableStickers ? TGPhotoEditorControllerSignupAvatarIntent : TGPhotoEditorControllerAvatarIntent adjustments:nil caption:nil screenImage:thumbnailImage availableTabs:[TGPhotoEditorController defaultTabsForAvatarIntent] selectedTab:TGPhotoEditorCropTab];
         controller.editingContext = _editingContext;
+        controller.stickersContext = _stickersContext;
         controller.dontHideStatusBar = true;
         
         TGMediaAvatarEditorTransition *transition = [[TGMediaAvatarEditorTransition alloc] initWithController:controller fromView:referenceViewForAsset(asset)];
@@ -911,7 +913,17 @@ const NSUInteger TGAttachmentDisplayedAssetLimit = 500;
         
         controller.requestOriginalFullSizeImage = ^(id<TGMediaEditableItem> editableItem, NSTimeInterval position)
         {
-            return [editableItem originalImageSignal:position];
+            if (editableItem.isVideo) {
+                if ([editableItem isKindOfClass:[TGMediaAsset class]]) {
+                    return [TGMediaAssetImageSignals avAssetForVideoAsset:(TGMediaAsset *)editableItem];
+                } else if ([editableItem isKindOfClass:[TGCameraCapturedVideo class]]) {
+                    return [SSignal single:((TGCameraCapturedVideo *)editableItem).avAsset];
+                } else {
+                    return [editableItem originalImageSignal:position];
+                }
+            } else {
+                return [editableItem originalImageSignal:position];
+            }
         };
         
         TGOverlayControllerWindow *controllerWindow = [[TGOverlayControllerWindow alloc] initWithManager:windowManager parentController:_parentController contentController:controller];

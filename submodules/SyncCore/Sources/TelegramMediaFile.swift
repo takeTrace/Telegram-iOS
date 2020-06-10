@@ -8,6 +8,7 @@ private let typeAnimated: Int32 = 3
 private let typeVideo: Int32 = 4
 private let typeAudio: Int32 = 5
 private let typeHasLinkedStickers: Int32 = 6
+private let typeHintFileIsLarge: Int32 = 7
 
 public enum StickerPackReference: PostboxCoding, Hashable, Equatable {
     case id(id: Int64, accessHash: Int64)
@@ -129,6 +130,7 @@ public enum TelegramMediaFileAttribute: PostboxCoding {
     case Video(duration: Int, size: PixelDimensions, flags: TelegramMediaVideoFlags)
     case Audio(isVoice: Bool, duration: Int, title: String?, performer: String?, waveform: MemoryBuffer?)
     case HasLinkedStickers
+    case hintFileIsLarge
     
     public init(decoder: PostboxDecoder) {
         let type: Int32 = decoder.decodeInt32ForKey("t", orElse: 0)
@@ -152,6 +154,8 @@ public enum TelegramMediaFileAttribute: PostboxCoding {
                 self = .Audio(isVoice: decoder.decodeInt32ForKey("iv", orElse: 0) != 0, duration: Int(decoder.decodeInt32ForKey("du", orElse: 0)), title: decoder.decodeOptionalStringForKey("ti"), performer: decoder.decodeOptionalStringForKey("pe"), waveform: waveform)
             case typeHasLinkedStickers:
                 self = .HasLinkedStickers
+            case typeHintFileIsLarge:
+                self = .hintFileIsLarge
             default:
                 preconditionFailure()
         }
@@ -202,6 +206,8 @@ public enum TelegramMediaFileAttribute: PostboxCoding {
                 }
             case .HasLinkedStickers:
                 encoder.encodeInt32(typeHasLinkedStickers, forKey: "t")
+            case .hintFileIsLarge:
+                encoder.encodeInt32(typeHintFileIsLarge, forKey: "t")
         }
     }
 }
@@ -398,7 +404,7 @@ public final class TelegramMediaFile: Media, Equatable, Codable {
     public var isStaticSticker: Bool {
         for attribute in self.attributes {
             if case .Sticker = attribute {
-                if let s = self.size, s < 200 * 1024 {
+                if let s = self.size, s < 300 * 1024 {
                     return !isAnimatedSticker
                 }
             }

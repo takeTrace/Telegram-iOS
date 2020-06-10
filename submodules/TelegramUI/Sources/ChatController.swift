@@ -317,6 +317,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     private var focusOnSearchAfterAppearance: Bool = false
     
     private let keepPeerInfoScreenDataHotDisposable = MetaDisposable()
+    
+    private let peekData: ChatPeekTimeout?
+    private let peekTimerDisposable = MetaDisposable()
 
     public override var customData: Any? {
         return self.chatLocation
@@ -324,7 +327,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     
     var purposefulAction: (() -> Void)?
     
-    public init(context: AccountContext, chatLocation: ChatLocation, subject: ChatControllerSubject? = nil, botStart: ChatControllerInitialBotStart? = nil, mode: ChatControllerPresentationMode = .standard(previewing: false)) {
+    public init(context: AccountContext, chatLocation: ChatLocation, subject: ChatControllerSubject? = nil, botStart: ChatControllerInitialBotStart? = nil, mode: ChatControllerPresentationMode = .standard(previewing: false), peekData: ChatPeekTimeout? = nil) {
         let _ = ChatControllerCount.modify { value in
             return value + 1
         }
@@ -333,6 +336,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.chatLocation = chatLocation
         self.subject = subject
         self.botStart = botStart
+        self.peekData = peekData
         
         var locationBroadcastPanelSource: LocationBroadcastPanelSource
         
@@ -982,9 +986,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 return
             }
             if let botStart = strongSelf.botStart, case let .automatic(returnToPeerId, scheduled) = botStart.behavior {
-                strongSelf.openPeer(peerId: returnToPeerId, navigation: .chat(textInputState: ChatTextInputState(inputText: NSAttributedString(string: inputString)), subject: scheduled ? .scheduledMessages : nil), fromMessage: nil)
+                strongSelf.openPeer(peerId: returnToPeerId, navigation: .chat(textInputState: ChatTextInputState(inputText: NSAttributedString(string: inputString)), subject: scheduled ? .scheduledMessages : nil, peekData: nil), fromMessage: nil)
             } else {
-                strongSelf.openPeer(peerId: peerId, navigation: .chat(textInputState: ChatTextInputState(inputText: NSAttributedString(string: inputString)), subject: nil), fromMessage: nil)
+                strongSelf.openPeer(peerId: peerId, navigation: .chat(textInputState: ChatTextInputState(inputText: NSAttributedString(string: inputString)), subject: nil, peekData: nil), fromMessage: nil)
             }
         }, openUrl: { [weak self] url, concealed, _, message in
             if let strongSelf = self {
@@ -1219,7 +1223,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             if let strongSelf = self {
                 switch action {
                     case let .url(url):
-                        var cleanUrl = url
+                        var (cleanUrl, _) = parseUrl(url: url, wasConcealed: false)
                         var canAddToReadingList = true
                         var canOpenIn = availableOpenInOptions(context: strongSelf.context, item: .url(url: url)).count > 1
                         let mailtoString = "mailto:"
@@ -1288,7 +1292,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         items.append(ActionSheetButtonItem(title: strongSelf.presentationData.strings.Conversation_LinkDialogOpen, color: .accent, action: { [weak actionSheet] in
                             actionSheet?.dismissAnimated()
                             if let strongSelf = self {
-                                strongSelf.openPeer(peerId: peerId, navigation: .chat(textInputState: nil, subject: nil), fromMessage: nil)
+                                strongSelf.openPeer(peerId: peerId, navigation: .chat(textInputState: nil, subject: nil, peekData: nil), fromMessage: nil)
                             }
                         }))
                         if !mention.isEmpty {
@@ -1919,8 +1923,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                     break
                                 }
                             }
-                            let signal = requestEditMessage(account: strongSelf.context.account, messageId: messageId, text: message.text, media: .keep, entities: entities, disableUrlPreview: false, scheduleTime: time)
-                            strongSelf.editMessageDisposable.set((signal |> deliverOnMainQueue).start(next: { result in
+                            strongSelf.editMessageDisposable.set((requestEditMessage(account: strongSelf.context.account, messageId: messageId, text: message.text, media: .keep, entities: entities, disableUrlPreview: false, scheduleTime: time) |> deliverOnMainQueue).start(next: { result in
                             }, error: { error in
                             }))
                         }
@@ -2301,9 +2304,15 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             var contactStatus: ChatContactStatus?
                             if let peer = peerView.peers[peerView.peerId] {
                                 if let cachedData = peerView.cachedData as? CachedUserData {
-                                    contactStatus = ChatContactStatus(canAddContact: !peerView.peerIsContact, canReportIrrelevantLocation: false, peerStatusSettings: cachedData.peerStatusSettings)
+                                    contactStatus = ChatContactStatus(canAddContact: !peerView.peerIsContact, canReportIrrelevantLocation: false, peerStatusSettings: cachedData.peerStatusSettings, invitedBy: nil)
                                 } else if let cachedData = peerView.cachedData as? CachedGroupData {
-                                    contactStatus = ChatContactStatus(canAddContact: false, canReportIrrelevantLocation: false, peerStatusSettings: cachedData.peerStatusSettings)
+                                    var invitedBy: Peer?
+                                    if let invitedByPeerId = cachedData.invitedBy {
+                                        if let peer = peerView.peers[invitedByPeerId] {
+                                            invitedBy = peer
+                                        }
+                                    }
+                                    contactStatus = ChatContactStatus(canAddContact: false, canReportIrrelevantLocation: false, peerStatusSettings: cachedData.peerStatusSettings, invitedBy: invitedBy)
                                 } else if let cachedData = peerView.cachedData as? CachedChannelData {
                                     var canReportIrrelevantLocation = true
                                     if let peer = peerView.peers[peerView.peerId] as? TelegramChannel, peer.participationStatus == .member {
@@ -2312,7 +2321,13 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                     if let peerReportNotice = peerReportNotice, peerReportNotice {
                                         canReportIrrelevantLocation = false
                                     }
-                                    contactStatus = ChatContactStatus(canAddContact: false, canReportIrrelevantLocation: canReportIrrelevantLocation, peerStatusSettings: cachedData.peerStatusSettings)
+                                    var invitedBy: Peer?
+                                    if let invitedByPeerId = cachedData.invitedBy {
+                                        if let peer = peerView.peers[invitedByPeerId] {
+                                            invitedBy = peer
+                                        }
+                                    }
+                                    contactStatus = ChatContactStatus(canAddContact: false, canReportIrrelevantLocation: canReportIrrelevantLocation, peerStatusSettings: cachedData.peerStatusSettings, invitedBy: invitedBy)
                                 }
                                 
                                 var peers = SimpleDictionary<PeerId, Peer>()
@@ -2729,6 +2744,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.reminderActivity?.invalidate()
         self.updateSlowmodeStatusDisposable.dispose()
         self.keepPeerInfoScreenDataHotDisposable.dispose()
+        self.peekTimerDisposable.dispose()
     }
     
     public func updatePresentationMode(_ mode: ChatControllerPresentationMode) {
@@ -3668,6 +3684,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         if let strongSelf = self, let (searchResult, searchState, searchLocation) = searchResult {
                             
                             let controller = ChatSearchResultsController(context: strongSelf.context, location: searchLocation, searchQuery: searchData.query, searchResult: searchResult, searchState: searchState, navigateToMessageIndex: { index in
+                                guard let strongSelf = self else {
+                                    return
+                                }
                                 strongSelf.interfaceInteraction?.navigateMessageSearch(.index(index))
                             }, resultsUpdated: { results, state in
                                 guard let strongSelf = self else {
@@ -3792,6 +3811,11 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             if let navigationController = strongSelf.effectiveNavigationController {
                 strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: nil, keepStack: .always))
             }
+        }, navigateToProfile: { [weak self] peerId in
+            guard let strongSelf = self else {
+                return
+            }
+            strongSelf.openPeer(peerId: peerId, navigation: .default, fromMessage: nil)
         }, openPeerInfo: { [weak self] in
             self?.navigationButtonAction(.openChatInfo(expandAvatar: false))
         }, togglePeerNotifications: { [weak self] in
@@ -4691,7 +4715,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         let actions: [TextAlertAction]
                         if moreInfo {
                             actions = [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Generic_ErrorMoreInfo, action: {
-                                self?.openPeerMention("spambot", navigation: .chat(textInputState: nil, subject: nil))
+                                self?.openPeerMention("spambot", navigation: .chat(textInputState: nil, subject: nil, peekData: nil))
                             }), TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]
                         } else {
                             actions = [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]
@@ -4958,7 +4982,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 
                 let text: String
                 switch error {
-                case .generic:
+                case .generic, .textTooLong:
                     text = strongSelf.presentationData.strings.Channel_EditMessageErrorGeneric
                 case .restricted:
                     text = strongSelf.presentationData.strings.Group_ErrorSendRestrictedMedia
@@ -4977,6 +5001,58 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             if let searchNode = self.navigationBar?.contentNode as? ChatSearchNavigationContentNode {
                 searchNode.activate()
             }
+        }
+        
+        if let peekData = self.peekData {
+            let timestamp = Int32(Date().timeIntervalSince1970)
+            let remainingTime = max(1, peekData.deadline - timestamp)
+            self.peekTimerDisposable.set((
+                (
+                    Signal<Bool, NoError>.single(true)
+                    |> suspendAwareDelay(Double(remainingTime), granularity: 2.0, queue: .mainQueue())
+                )
+                |> deliverOnMainQueue
+            ).start(next: { [weak self] _ in
+                guard let strongSelf = self else {
+                    return
+                }
+                strongSelf.present(textAlertController(
+                    context: strongSelf.context,
+                    title: strongSelf.presentationData.strings.Conversation_PrivateChannelTimeLimitedAlertTitle,
+                    text: strongSelf.presentationData.strings.Conversation_PrivateChannelTimeLimitedAlertText,
+                    actions: [
+                        TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Conversation_PrivateChannelTimeLimitedAlertJoin, action: {
+                            guard let strongSelf = self else {
+                                return
+                            }
+                            strongSelf.peekTimerDisposable.set(
+                                (joinChatInteractively(with: peekData.linkData, account: strongSelf.context.account)
+                                |> deliverOnMainQueue).start(next: { peerId in
+                                    guard let strongSelf = self else {
+                                        return
+                                    }
+                                    if peerId == nil {
+                                        strongSelf.dismiss()
+                                    }
+                                }, error: { _ in
+                                    guard let strongSelf = self else {
+                                        return
+                                    }
+                                    strongSelf.dismiss()
+                                })
+                            )
+                        }),
+                        TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {
+                            guard let strongSelf = self else {
+                                return
+                            }
+                            strongSelf.dismiss()
+                        })
+                    ],
+                    actionLayout: .vertical,
+                    dismissOnOutsideTap: false
+                ), in: .window(.root))
+            }))
         }
     }
     
@@ -5001,6 +5077,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         })
         
         self.sendMessageActionsController?.dismiss()
+        
+        if let _ = self.peekData {
+            self.peekTimerDisposable.set(nil)
+        }
     }
     
     private func saveInterfaceState(includeScrollState: Bool = true) {
@@ -7779,7 +7859,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             switch navigation {
                 case .info:
                     self.navigationButtonAction(.openChatInfo(expandAvatar: expandAvatar))
-                case let .chat(textInputState, _):
+                case let .chat(textInputState, _, _):
                     if let textInputState = textInputState {
                         self.updateChatPresentationInterfaceState(animated: true, interactive: true, {
                             return ($0.updatedInterfaceState {
@@ -7801,7 +7881,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 switch self.chatLocation {
                     case let .peer(selfPeerId):
                         switch navigation {
-                            case .info:
+                            case .info, .default:
                                 let peerSignal: Signal<Peer?, NoError>
                                 if let fromMessage = fromMessage {
                                     peerSignal = loadedPeerFromMessage(account: self.context.account, peerId: peerId, messageId: fromMessage.id)
@@ -7826,7 +7906,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                         }
                                     }
                                 }))
-                            case let .chat(textInputState, subject):
+                            case let .chat(textInputState, subject, peekData):
                                 if let textInputState = textInputState {
                                     let _ = (self.context.account.postbox.transaction({ transaction -> Void in
                                         transaction.updatePeerChatInterfaceState(peerId, update: { currentState in
@@ -7839,7 +7919,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                     })
                                     |> deliverOnMainQueue).start(completed: { [weak self] in
                                         if let strongSelf = self, let navigationController = strongSelf.effectiveNavigationController {
-                                            strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, updateTextInputState: textInputState))
+                                            strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, updateTextInputState: textInputState, peekData: peekData))
                                         }
                                     })
                                 } else {
@@ -7857,7 +7937,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 switch navigation {
                     case .info:
                         break
-                    case let .chat(textInputState, _):
+                    case let .chat(textInputState, _, _):
                         if let textInputState = textInputState {
                             let controller = self.context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: self.context))
                             controller.peerSelected = { [weak self, weak controller] peerId in
@@ -7962,7 +8042,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     var navigation = navigation
                     if case .default = navigation {
                         if let peer = peer as? TelegramUser, peer.botInfo != nil {
-                            navigation = .chat(textInputState: nil, subject: nil)
+                            navigation = .chat(textInputState: nil, subject: nil, peekData: nil)
                         }
                     }
                     strongSelf.openResolved(.peer(peer.id, navigation))
@@ -8219,19 +8299,19 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }))
     }
     
-    private func openResolved(_ result: ResolvedUrl, message: Message? = nil) {
+    private func openResolved(_ result: ResolvedUrl) {
         self.context.sharedContext.openResolvedUrl(result, context: self.context, urlContext: .chat, navigationController: self.effectiveNavigationController, openPeer: { [weak self] peerId, navigation in
             guard let strongSelf = self else {
                 return
             }
             switch navigation {
-                case let .chat(_, subject):
+                case let .chat(_, subject, peekData):
                     if case .peer(peerId) = strongSelf.chatLocation {
                         if let subject = subject, case let .message(messageId) = subject {
                             strongSelf.navigateToMessage(from: nil, to: .id(messageId))
                         }
                     } else if let navigationController = strongSelf.effectiveNavigationController {
-                        strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, keepStack: .always))
+                        strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, keepStack: .always, peekData: peekData))
                     }
                 case .info:
                     strongSelf.navigationActionDisposable.set((strongSelf.context.account.postbox.loadedPeerWithId(peerId)
@@ -8261,113 +8341,17 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             self?.present(c, in: .window(.root), with: a)
         }, dismissInput: { [weak self] in
             self?.chatDisplayNode.dismissInput()
-        }, contentContext: message)
+        }, contentContext: nil)
     }
     
     private func openUrl(_ url: String, concealed: Bool, message: Message? = nil) {
         self.commitPurposefulAction()
         
-        var concealed = concealed
-        
-        let openImpl: () -> Void = { [weak self] in
-            guard let strongSelf = self else {
-                return
-            }
-        
-            let disposable: MetaDisposable
-            if let current = strongSelf.resolveUrlDisposable {
-                disposable = current
-            } else {
-                disposable = MetaDisposable()
-                strongSelf.resolveUrlDisposable = disposable
-            }
-            var cancelImpl: (() -> Void)?
-            let presentationData = strongSelf.presentationData
-            let progressSignal = Signal<Never, NoError> { subscriber in
-                let controller = OverlayStatusController(theme: presentationData.theme,  type: .loading(cancelled: {
-                    cancelImpl?()
-                }))
-                self?.present(controller, in: .window(.root))
-                return ActionDisposable { [weak controller] in
-                    Queue.mainQueue().async() {
-                        controller?.dismiss()
-                    }
-                }
-            }
-            |> runOn(Queue.mainQueue())
-            |> delay(0.15, queue: Queue.mainQueue())
-            let progressDisposable = progressSignal.start()
-            
-            cancelImpl = { [weak self] in
-                self?.resolveUrlDisposable?.set(nil)
-            }
-            disposable.set((strongSelf.context.sharedContext.resolveUrl(account: strongSelf.context.account, url: url)
-            |> afterDisposed {
-                Queue.mainQueue().async {
-                    progressDisposable.dispose()
-                }
-            }
-            |> deliverOnMainQueue).start(next: { [weak self] result in
-                if let strongSelf = self {
-                    strongSelf.openResolved(result, message: message)
-                }
-            }))
-        }
-        
-        var parsedUrlValue: URL?
-        if let parsed = URL(string: url) {
-            parsedUrlValue = parsed
-        } else if let parsed = URL(string: "https://" + url) {
-            parsedUrlValue = parsed
-        } else if let encoded = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let parsed = URL(string: encoded) {
-            parsedUrlValue = parsed
-        }
-        let host = parsedUrlValue?.host ?? url
-        
-        let rawHost = (host as NSString).removingPercentEncoding ?? host
-        var latin = CharacterSet()
-        latin.insert(charactersIn: "A"..."Z")
-        latin.insert(charactersIn: "a"..."z")
-        latin.insert(charactersIn: "0"..."9")
-        var punctuation = CharacterSet()
-        punctuation.insert(charactersIn: ".-/+_")
-        var hasLatin = false
-        var hasNonLatin = false
-        for c in rawHost {
-            if c.unicodeScalars.allSatisfy(punctuation.contains) {
-            } else if c.unicodeScalars.allSatisfy(latin.contains) {
-                hasLatin = true
-            } else {
-                hasNonLatin = true
-            }
-        }
-        if hasLatin && hasNonLatin {
-            concealed = true
-        }
-        
-        if let parsedUrlValue = parsedUrlValue, isConcealedUrlWhitelisted(parsedUrlValue) {
-            concealed = false
-        }
-        
-        if concealed {
-            var rawDisplayUrl: String
-            if hasNonLatin {
-                rawDisplayUrl = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url
-            } else {
-                rawDisplayUrl = url
-            }
-            let maxLength = 180
-            if rawDisplayUrl.count > maxLength {
-                rawDisplayUrl = String(rawDisplayUrl[..<rawDisplayUrl.index(rawDisplayUrl.startIndex, offsetBy: maxLength - 2)]) + "..."
-            }
-            var displayUrl = rawDisplayUrl
-            displayUrl = displayUrl.replacingOccurrences(of: "\u{202e}", with: "")
-            self.present(textAlertController(context: self.context, title: nil, text: self.presentationData.strings.Generic_OpenHiddenLinkAlert(displayUrl).0, actions: [TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_No, action: {}), TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_Yes, action: {
-                openImpl()
-            })]), in: .window(.root))
-        } else {
-            openImpl()
-        }
+        openUserGeneratedUrl(context: self.context, url: url, concealed: concealed, present: { [weak self] c in
+            self?.present(c, in: .window(.root))
+        }, openResolved: { [weak self] resolved in
+            self?.openResolved(resolved)
+        })
     }
     
     private func openUrlIn(_ url: String) {
@@ -9285,5 +9269,115 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
     }
     
     func animatedIn() {
+    }
+}
+
+func parseUrl(url: String, wasConcealed: Bool) -> (string: String, concealed: Bool) {
+    var parsedUrlValue: URL?
+    if let parsed = URL(string: url) {
+        parsedUrlValue = parsed
+    } else if let parsed = URL(string: "https://" + url) {
+        parsedUrlValue = parsed
+    } else if let encoded = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let parsed = URL(string: encoded) {
+        parsedUrlValue = parsed
+    }
+    let host = parsedUrlValue?.host ?? url
+    
+    let rawHost = (host as NSString).removingPercentEncoding ?? host
+    var latin = CharacterSet()
+    latin.insert(charactersIn: "A"..."Z")
+    latin.insert(charactersIn: "a"..."z")
+    latin.insert(charactersIn: "0"..."9")
+    var punctuation = CharacterSet()
+    punctuation.insert(charactersIn: ".-/+_")
+    var hasLatin = false
+    var hasNonLatin = false
+    for c in rawHost {
+        if c.unicodeScalars.allSatisfy(punctuation.contains) {
+        } else if c.unicodeScalars.allSatisfy(latin.contains) {
+            hasLatin = true
+        } else {
+            hasNonLatin = true
+        }
+    }
+    var concealed = wasConcealed
+    if hasLatin && hasNonLatin {
+        concealed = true
+    }
+    
+    var rawDisplayUrl: String
+    if hasNonLatin {
+        rawDisplayUrl = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url
+    } else {
+        rawDisplayUrl = url
+    }
+    
+    if let parsedUrlValue = parsedUrlValue, isConcealedUrlWhitelisted(parsedUrlValue) {
+        concealed = false
+    }
+    
+    let whitelistedSchemes: [String] = [
+        "tel",
+    ]
+    if let parsedUrlValue = parsedUrlValue, let scheme = parsedUrlValue.scheme, whitelistedSchemes.contains(scheme) {
+        concealed = false
+    }
+    
+    return (rawDisplayUrl, concealed)
+}
+
+func openUserGeneratedUrl(context: AccountContext, url: String, concealed: Bool, present: @escaping (ViewController) -> Void, openResolved: @escaping (ResolvedUrl) -> Void) {
+    var concealed = concealed
+    
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    
+    let openImpl: () -> Void = {
+        let disposable = MetaDisposable()
+        var cancelImpl: (() -> Void)?
+        let progressSignal = Signal<Never, NoError> { subscriber in
+            let controller = OverlayStatusController(theme: presentationData.theme,  type: .loading(cancelled: {
+                cancelImpl?()
+            }))
+            present(controller)
+            return ActionDisposable { [weak controller] in
+                Queue.mainQueue().async() {
+                    controller?.dismiss()
+                }
+            }
+        }
+        |> runOn(Queue.mainQueue())
+        |> delay(0.15, queue: Queue.mainQueue())
+        let progressDisposable = progressSignal.start()
+        
+        cancelImpl = {
+            disposable.dispose()
+        }
+        disposable.set((context.sharedContext.resolveUrl(account: context.account, url: url)
+        |> afterDisposed {
+            Queue.mainQueue().async {
+                progressDisposable.dispose()
+            }
+        }
+        |> deliverOnMainQueue).start(next: { result in
+            openResolved(result)
+        }))
+    }
+    
+    let (parsedString, parsedConcealed) = parseUrl(url: url, wasConcealed: concealed)
+    concealed = parsedConcealed
+    
+    if concealed {
+        var rawDisplayUrl: String = parsedString
+        let maxLength = 180
+        if rawDisplayUrl.count > maxLength {
+            rawDisplayUrl = String(rawDisplayUrl[..<rawDisplayUrl.index(rawDisplayUrl.startIndex, offsetBy: maxLength - 2)]) + "..."
+        }
+        var displayUrl = rawDisplayUrl
+        displayUrl = displayUrl.replacingOccurrences(of: "\u{202e}", with: "")
+        present(textAlertController(context: context, title: nil, text: presentationData.strings.Generic_OpenHiddenLinkAlert(displayUrl).0, actions: [TextAlertAction(type: .genericAction, title: presentationData.strings.Common_No, action: {}), TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_Yes, action: {
+            openImpl()
+        })]))
+    } else {
+        openImpl()
     }
 }

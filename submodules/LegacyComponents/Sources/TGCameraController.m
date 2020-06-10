@@ -1237,7 +1237,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                 
                 if ([item.asset isKindOfClass:[TGCameraCapturedVideo class]])
                 {
-                    AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc] initWithAsset:((TGCameraCapturedVideo *)item.asset).avAsset];
+                    AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc] initWithAsset:((TGCameraCapturedVideo *)item.asset).immediateAVAsset];
                     generator.appliesPreferredTrackTransform = true;
                     generator.maximumSize = CGSizeMake(640.0f, 640.0f);
                     CGImageRef imageRef = [generator copyCGImageAtTime:kCMTimeZero actualTime:NULL error:NULL];
@@ -1772,7 +1772,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                     if ([editableItem isKindOfClass:[TGMediaAsset class]]) {
                         return [TGMediaAssetImageSignals avAssetForVideoAsset:(TGMediaAsset *)editableItem];
                     } else if ([editableItem isKindOfClass:[TGCameraCapturedVideo class]]) {
-                        return [SSignal single:((TGCameraCapturedVideo *)editableItem).avAsset];
+                        return ((TGCameraCapturedVideo *)editableItem).avAsset;
                     } else {
                         return [editableItem originalImageSignal:position];
                     }
@@ -2467,7 +2467,9 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                     else if ([item isKindOfClass:[TGCameraCapturedVideo class]])
                     {
                         TGCameraCapturedVideo *video = (TGCameraCapturedVideo *)item;
-                        return [SSignal single:@{@"type": @"video", @"url": video.avAsset.URL}];
+                        return [[video avAsset] mapToSignal:^SSignal *(AVURLAsset *avAsset) {
+                            return [SSignal single:@{@"type": @"video", @"url": avAsset.URL}];
+                        }];
                     }
                     
                     return [SSignal complete];
@@ -2689,9 +2691,11 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
             };
             
             CGSize imageSize = TGFillSize(asset.originalSize, CGSizeMake(512, 512));
-            SSignal *trimmedVideoThumbnailSignal = [[TGMediaAssetImageSignals videoThumbnailForAVAsset:video.avAsset size:imageSize timestamp:CMTimeMakeWithSeconds(adjustments.trimStartValue, NSEC_PER_SEC)] map:^UIImage *(UIImage *image)
-            {
+            SSignal *trimmedVideoThumbnailSignal = [[video avAsset] mapToSignal:^SSignal *(AVURLAsset *avAsset) {
+                return [[TGMediaAssetImageSignals videoThumbnailForAVAsset:avAsset size:imageSize timestamp:CMTimeMakeWithSeconds(adjustments.trimStartValue, NSEC_PER_SEC)] map:^UIImage *(UIImage *image)
+                {
                     return cropVideoThumbnail(image, TGScaleToFill(asset.originalSize, CGSizeMake(512, 512)), asset.originalSize, true);
+                }];
             }];
             
             SSignal *videoThumbnailSignal = [inlineThumbnailSignal(asset) map:^UIImage *(UIImage *image)
@@ -2705,25 +2709,27 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
             CGSize dimensions = [TGMediaVideoConverter dimensionsFor:asset.originalSize adjustments:adjustments preset:preset];
             NSTimeInterval duration = adjustments.trimApplied ? (adjustments.trimEndValue - adjustments.trimStartValue) : video.videoDuration;
             
-            [signals addObject:[thumbnailSignal map:^id(UIImage *image)
+            [signals addObject:[thumbnailSignal mapToSignal:^id(UIImage *image)
             {
-                NSMutableDictionary *dict = [[NSMutableDictionary alloc] init];
-                dict[@"type"] = @"cameraVideo";
-                dict[@"url"] = video.avAsset.URL;
-                dict[@"previewImage"] = image;
-                dict[@"adjustments"] = adjustments;
-                dict[@"dimensions"] = [NSValue valueWithCGSize:dimensions];
-                dict[@"duration"] = @(duration);
-                
-                if (adjustments.paintingData.stickers.count > 0)
-                    dict[@"stickers"] = adjustments.paintingData.stickers;
-                if (timer != nil)
-                    dict[@"timer"] = timer;
-                else if (groupedId != nil && !hasAnyTimers)
-                    dict[@"groupedId"] = groupedId;
-                
-                id generatedItem = descriptionGenerator(dict, caption, entities, nil);
-                return generatedItem;
+                return [video.avAsset map:^id(AVURLAsset *avAsset) {
+                    NSMutableDictionary *dict = [[NSMutableDictionary alloc] init];
+                    dict[@"type"] = @"cameraVideo";
+                    dict[@"url"] = avAsset.URL;
+                    dict[@"previewImage"] = image;
+                    dict[@"adjustments"] = adjustments;
+                    dict[@"dimensions"] = [NSValue valueWithCGSize:dimensions];
+                    dict[@"duration"] = @(duration);
+                    
+                    if (adjustments.paintingData.stickers.count > 0)
+                        dict[@"stickers"] = adjustments.paintingData.stickers;
+                    if (timer != nil)
+                        dict[@"timer"] = timer;
+                    else if (groupedId != nil && !hasAnyTimers)
+                        dict[@"groupedId"] = groupedId;
+                    
+                    id generatedItem = descriptionGenerator(dict, caption, entities, nil);
+                    return generatedItem;
+                }];
             }]];
             
             i++;

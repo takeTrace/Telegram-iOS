@@ -699,7 +699,7 @@
 
     SSignal *renderedImageSignal = [[imageSignal mapToSignal:^SSignal *(UIImage *image)
     {
-        return [imageCropSignal(image, !hasImageAdjustments || hasPainting) startOn:_queue];
+        return [imageCropSignal(image, !hasImageAdjustments || hasPainting || MAX(image.size.width, image.size.height) > 4096) startOn:_queue];
     }] mapToSignal:^SSignal *(UIImage *image)
     {
         if (hasImageAdjustments)
@@ -1552,7 +1552,7 @@
                 if ([item isKindOfClass:[TGMediaAsset class]])
                     assetSignal = [TGMediaAssetImageSignals avAssetForVideoAsset:(TGMediaAsset *)item];
                 else if ([item isKindOfClass:[TGCameraCapturedVideo class]])
-                    assetSignal = [SSignal single:((TGCameraCapturedVideo *)item).avAsset];
+                    assetSignal = ((TGCameraCapturedVideo *)item).avAsset;
                 
                 [assetSignal startWithNext:^(AVAsset *asset)
                 {

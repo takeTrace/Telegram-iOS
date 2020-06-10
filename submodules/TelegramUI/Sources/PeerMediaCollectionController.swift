@@ -502,6 +502,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
         }, toggleMembersSearch: { _ in
         }, navigateToMessage: { _ in
         }, navigateToChat: { _ in
+        }, navigateToProfile: { _ in
         }, openPeerInfo: {
         }, togglePeerNotifications: {
         }, sendContextResult: { _, _, _, _ in
@@ -756,9 +757,9 @@ public class PeerMediaCollectionController: TelegramBaseController {
                 strongSelf.context.sharedContext.openResolvedUrl(result, context: strongSelf.context, urlContext: .generic, navigationController: strongSelf.navigationController as? NavigationController, openPeer: { peerId, navigation in
                     if let strongSelf = self {
                         switch navigation {
-                            case let .chat(_, subject):
+                            case let .chat(_, subject, peekData):
                                 if let navigationController = strongSelf.navigationController as? NavigationController {
-                                    strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, keepStack: .always))
+                                    strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, keepStack: .always, peekData: peekData))
                                 }
                             case .info:
                                 strongSelf.navigationActionDisposable.set((strongSelf.context.account.postbox.loadedPeerWithId(peerId)
